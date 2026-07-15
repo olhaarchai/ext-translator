@@ -7,15 +7,22 @@ import {
   type TranslateOutcome,
   type TranslateProgress,
 } from './translate'
+import { vocabAdd, vocabHas, vocabRemove } from './vocab-client'
+import { keyOf, normalizeSourceText, type VocabEntry } from './vocab-types'
 
 const HOST_ID = 'ext-translator-host'
 const BUBBLE_WIDTH = 340
 
 let teardown: (() => void) | null = null
 let activeRoot: HTMLElement | null = null
+let refreshSaved: (() => void) | null = null
 
 export function bubbleRootForTest(): HTMLElement | null {
   return activeRoot
+}
+
+export function notifyVocabChanged(): void {
+  refreshSaved?.()
 }
 
 export async function openBubble(fallbackText: string): Promise<void> {
@@ -64,6 +71,7 @@ export async function openBubble(fallbackText: string): Promise<void> {
 export function closeBubble(): void {
   teardown?.()
   teardown = null
+  refreshSaved = null
 }
 
 class Bubble {
@@ -101,10 +109,12 @@ class Bubble {
   }
 
   private renderStatus(text: string): void {
+    refreshSaved = null
     this.root.replaceChildren(el('p', 'message', text))
   }
 
   private renderOutcome(outcome: TranslateOutcome, target: string): void {
+    refreshSaved = null
     const nodes: HTMLElement[] = []
 
     if (outcome.kind === 'result') {
@@ -113,6 +123,7 @@ class Bubble {
       if (outcome.truncated) {
         nodes.push(el('p', 'meta', `Only the first ${MAX_CHARS} characters were translated.`))
       }
+      nodes.push(this.buildSaveControl(this.entryFor(outcome, target)))
     } else if (outcome.kind === 'same-language') {
       nodes.push(el('p', 'message', `The selected text is already in ${languageLabel(outcome.language)}.`))
     } else {
@@ -128,6 +139,35 @@ class Bubble {
       nodes.push(this.footer(target))
     }
     this.root.replaceChildren(...nodes)
+  }
+
+  private entryFor(outcome: Extract<TranslateOutcome, { kind: 'result' }>, target: string): VocabEntry {
+    const source = outcome.truncated ? normalizeSourceText(this.text.slice(0, MAX_CHARS)) : this.text
+    return {
+      sourceText: source,
+      translation: outcome.translation,
+      sourceLanguage: outcome.sourceLanguage,
+      targetLanguage: target,
+      addedAt: Date.now(),
+    }
+  }
+
+  private buildSaveControl(entry: VocabEntry): HTMLElement {
+    const wrap = el('div', 'save')
+    const key = keyOf(entry)
+
+    const render = (saved: boolean) => {
+      wrap.replaceChildren(
+        saved
+          ? button('Saved ✓ — remove', () => void vocabRemove(key).then(() => render(false)))
+          : button('Save to vocabulary', () => void vocabAdd(entry).then(() => render(true))),
+      )
+    }
+
+    wrap.replaceChildren(el('span', 'meta', 'Checking vocabulary…'))
+    refreshSaved = () => void vocabHas(key).then(render)
+    refreshSaved()
+    return wrap
   }
 
   private footer(target: string): HTMLElement {
@@ -257,6 +297,9 @@ const BUBBLE_CSS = `
   margin: 0 0 6px;
   font-size: 12px;
   opacity: 0.7;
+}
+.save {
+  margin: 6px 0 2px;
 }
 .footer {
   display: flex;

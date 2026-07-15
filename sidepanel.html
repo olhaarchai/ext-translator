@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Vocabulary</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --fg: #1a1a1a;
+        --muted: #6a6a6a;
+        --bg: #ffffff;
+        --card: #f6f6f6;
+        --border: rgba(0, 0, 0, 0.12);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --fg: #ececec;
+          --muted: #9a9a9a;
+          --bg: #1e1e1e;
+          --card: #2a2a2a;
+          --border: rgba(255, 255, 255, 0.14);
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 12px;
+        font: 14px/1.45 system-ui, sans-serif;
+        color: var(--fg);
+        background: var(--bg);
+      }
+      header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 15px;
+      }
+      #count {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      #filter {
+        width: 100%;
+        padding: 7px 9px;
+        margin-bottom: 10px;
+        font: inherit;
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        background: var(--bg);
+        color: inherit;
+      }
+      .entry {
+        padding: 9px 10px;
+        margin-bottom: 8px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--card);
+      }
+      .entry-source {
+        font-weight: 600;
+        overflow-wrap: anywhere;
+      }
+      .entry-translation {
+        margin-top: 2px;
+        overflow-wrap: anywhere;
+      }
+      .entry-foot {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-top: 6px;
+      }
+      .entry-langs {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .delete {
+        font: inherit;
+        font-size: 12px;
+        padding: 3px 9px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+      }
+      .delete:hover {
+        background: var(--border);
+      }
+      .state {
+        color: var(--muted);
+        padding: 20px 4px;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Vocabulary</h1>
+      <span id="count"></span>
+    </header>
+    <input id="filter" type="search" placeholder="Filter…" autocomplete="off" />
+    <div id="list"></div>
+    <script src="sidepanel.js"></script>
+  </body>
+</html>

@@ -1,6 +1,10 @@
 import type { TranslateSelectionMessage } from './lib/messages'
+import { addEntry, hasEntry, listEntries, removeEntry } from './lib/vocab-db'
+import type { VocabEntry, VocabKey } from './lib/vocab-types'
 
 const MENU_ID = 'translate-selection'
+
+chrome.sidePanel?.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {})
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.removeAll(() => {
@@ -26,5 +30,52 @@ async function handleClick(tabId: number, selectionText: string): Promise<void> 
   } catch {
     // Injection is impossible on browser-internal pages; the menu is scoped to
     // http(s) but a race with navigation can still land here.
+  }
+}
+
+type VocabRequest =
+  | { type: 'vocab-add'; entry: VocabEntry }
+  | { type: 'vocab-remove'; key: VocabKey }
+  | { type: 'vocab-has'; key: VocabKey }
+  | { type: 'vocab-list' }
+
+const VOCAB_TYPES = new Set(['vocab-add', 'vocab-remove', 'vocab-has', 'vocab-list'])
+
+chrome.runtime.onMessage.addListener((message: VocabRequest, _sender, sendResponse) => {
+  if (!message || !VOCAB_TYPES.has(message.type)) return
+  handleVocab(message)
+    .then(sendResponse)
+    .catch((error) => sendResponse({ ok: false, error: String(error) }))
+  return true
+})
+
+async function handleVocab(message: VocabRequest): Promise<unknown> {
+  switch (message.type) {
+    case 'vocab-add': {
+      const result = await addEntry(message.entry)
+      await broadcastChanged()
+      return { ok: true, result }
+    }
+    case 'vocab-remove': {
+      await removeEntry(message.key)
+      await broadcastChanged()
+      return { ok: true }
+    }
+    case 'vocab-has':
+      return { ok: true, has: await hasEntry(message.key) }
+    case 'vocab-list':
+      return { ok: true, entries: await listEntries() }
+  }
+}
+
+async function broadcastChanged(): Promise<void> {
+  chrome.runtime.sendMessage({ type: 'vocab-changed' }).catch(() => {})
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+    if (tab?.id !== undefined) {
+      chrome.tabs.sendMessage(tab.id, { type: 'vocab-changed' }).catch(() => {})
+    }
+  } catch {
+    // No active tab to notify; the side-panel broadcast above is enough.
   }
 }

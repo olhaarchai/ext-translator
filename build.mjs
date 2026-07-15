@@ -4,7 +4,7 @@ import { cpSync, mkdirSync } from 'node:fs'
 mkdirSync('dist', { recursive: true })
 
 await build({
-  entryPoints: ['src/background.ts', 'src/content.ts'],
+  entryPoints: ['src/background.ts', 'src/content.ts', 'src/sidepanel.ts'],
   outdir: 'dist',
   bundle: true,
   format: 'iife',
@@ -12,4 +12,5 @@ await build({
 })
 
 cpSync('manifest.json', 'dist/manifest.json')
+cpSync('sidepanel.html', 'dist/sidepanel.html')
 cpSync('icons', 'dist/icons', { recursive: true })

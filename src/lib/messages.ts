@@ -3,4 +3,8 @@ export type TranslateSelectionMessage = {
   text: string
 }
 
-export type Message = TranslateSelectionMessage
+export type VocabChangedMessage = {
+  type: 'vocab-changed'
+}
+
+export type Message = TranslateSelectionMessage | VocabChangedMessage

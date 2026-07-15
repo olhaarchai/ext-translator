@@ -4,7 +4,10 @@
   "version": "0.1.0",
   "description": "Translate selected text on any page, fully on-device with the browser's built-in translator.",
   "minimum_chrome_version": "138",
-  "permissions": ["contextMenus", "activeTab", "scripting", "storage"],
+  "permissions": ["contextMenus", "activeTab", "scripting", "storage", "sidePanel"],
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",
