@@ -11,14 +11,15 @@ text to a cloud service or stop at translation without helping you retain vocabu
 ## What the product does now
 
 Translates text the user selects on a webpage, fully on-device via the browser's
-built-in translation model. Nothing leaves the browser.
+built-in translation model, and lets the reader save any translation into a personal
+vocabulary browsed from a side panel. Nothing leaves the browser.
 
 ## Capabilities
 
 | Capability                                   | Spec | Status   |
 | -------------------------------------------- | ---- | -------- |
 | Select-to-translate with on-device model     | 001  | implemented |
-| Personal vocabulary (save translations)      | —    | planned  |
+| Personal vocabulary (save translations)      | 002  | implemented |
 | Flashcard training with audio and choices    | —    | planned  |
 
 ## Release strategy

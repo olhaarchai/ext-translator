@@ -1,4 +1,4 @@
-import { openBubble } from './lib/bubble'
+import { notifyVocabChanged, openBubble } from './lib/bubble'
 import type { Message } from './lib/messages'
 
 declare global {
@@ -12,6 +12,8 @@ if (!window.__extTranslatorLoaded) {
   chrome.runtime.onMessage.addListener((message: Message) => {
     if (message.type === 'translate-selection') {
       void openBubble(message.text)
+    } else if (message.type === 'vocab-changed') {
+      notifyVocabChanged()
     }
   })
 }

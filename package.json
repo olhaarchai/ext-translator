@@ -12,6 +12,7 @@
   "devDependencies": {
     "@types/chrome": "^0.2.2",
     "esbuild": "^0.28.1",
+    "fake-indexeddb": "^6.2.5",
     "happy-dom": "^20.10.6",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
