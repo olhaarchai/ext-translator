@@ -17,7 +17,7 @@ built-in translation model. Nothing leaves the browser.
 
 | Capability                                   | Spec | Status   |
 | -------------------------------------------- | ---- | -------- |
-| Select-to-translate with on-device model     | 001  | accepted |
+| Select-to-translate with on-device model     | 001  | implemented |
 | Personal vocabulary (save translations)      | —    | planned  |
 | Flashcard training with audio and choices    | —    | planned  |
 

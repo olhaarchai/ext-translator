@@ -1,6 +1,6 @@
 # 001 — Select-to-translate
 
-Status: accepted (2026-07-15)
+Status: implemented (2026-07-15)
 
 ## Why
 
