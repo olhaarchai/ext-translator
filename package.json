@@ -1,0 +1,19 @@
+{
+  "name": "ext-translator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.2.2",
+    "esbuild": "^0.28.1",
+    "happy-dom": "^20.10.6",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}
