@@ -33,28 +33,41 @@ function primaryKey(key: VocabKey): [string, string, string] {
   return [key.sourceText, key.sourceLanguage, key.targetLanguage]
 }
 
+// Writes settle on transaction completion, not on request success: a request can succeed
+// and the transaction still abort (quota, later error), which would otherwise be reported
+// to the user as a save that never persisted.
 export async function addEntry(entry: VocabEntry): Promise<'added' | 'exists'> {
   const db = await open()
   return new Promise((resolve, reject) => {
-    const request = store(db, 'readwrite').add(entry)
-    request.onsuccess = () => resolve('added')
+    const transaction = db.transaction(STORE, 'readwrite')
+    let outcome: 'added' | 'exists' = 'added'
+
+    const request = transaction.objectStore(STORE).add(entry)
+    request.onsuccess = () => {
+      outcome = 'added'
+    }
     request.onerror = (event) => {
       if (request.error?.name === 'ConstraintError') {
+        // Expected: the entry is already saved. Swallow it so the transaction still commits.
         event.preventDefault()
-        resolve('exists')
-      } else {
-        reject(request.error)
+        outcome = 'exists'
       }
     }
+
+    // No onerror handler: a prevented ConstraintError still bubbles here, and a real
+    // failure aborts the transaction, which onabort already reports.
+    transaction.oncomplete = () => resolve(outcome)
+    transaction.onabort = () => reject(transaction.error)
   })
 }
 
 export async function removeEntry(key: VocabKey): Promise<void> {
   const db = await open()
   return new Promise((resolve, reject) => {
-    const request = store(db, 'readwrite').delete(primaryKey(key))
-    request.onsuccess = () => resolve()
-    request.onerror = () => reject(request.error)
+    const transaction = db.transaction(STORE, 'readwrite')
+    transaction.objectStore(STORE).delete(primaryKey(key))
+    transaction.oncomplete = () => resolve()
+    transaction.onabort = () => reject(transaction.error)
   })
 }
 

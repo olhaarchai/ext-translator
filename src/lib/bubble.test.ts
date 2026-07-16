@@ -31,13 +31,18 @@ vi.mock('./speech', () => ({
   voicesForLanguage: () => [],
 }))
 
-import { bubbleRootForTest, closeBubble, openBubble } from './bubble'
+import {
+  bubbleRootForTest,
+  closeBubble,
+  currentBubbleHost,
+  notifyVocabChanged,
+  openBubble,
+} from './bubble'
 import { grantConsent, hasConsent } from './settings'
 import { speakToggle, stopSpeaking } from './speech'
-import { translateSelection } from './translate'
+import { translateSelection, type TranslateOutcome } from './translate'
 import { vocabAdd, vocabHas, vocabRemove } from './vocab-client'
 
-const HOST_ID = 'ext-translator-host'
 
 const RESULT = { kind: 'result', translation: 'Привіт', sourceLanguage: 'en', truncated: false } as const
 
@@ -98,19 +103,32 @@ describe('bubble translation', () => {
 
   it('never stacks bubbles on repeated invocations', async () => {
     await openBubble('first')
+    const first = currentBubbleHost()
     await openBubble('second')
-    expect(document.querySelectorAll(`#${HOST_ID}`)).toHaveLength(1)
+
+    expect(first?.isConnected).toBe(false)
+    expect(currentBubbleHost()).not.toBe(first)
+    expect(currentBubbleHost()?.isConnected).toBe(true)
   })
 
   it('closes on Escape', async () => {
     await openBubble('hello world')
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
-    expect(document.getElementById(HOST_ID)).toBeNull()
+    expect(currentBubbleHost()).toBeNull()
   })
 
   it('ignores empty selections', async () => {
     await openBubble('   ')
-    expect(document.getElementById(HOST_ID)).toBeNull()
+    expect(currentBubbleHost()).toBeNull()
+  })
+
+  it('gives the host an unguessable id and pins the properties a page could hide it with', async () => {
+    await openBubble('hello world')
+    const host = currentBubbleHost()!
+
+    expect(host.id).not.toContain('translator')
+    expect(host.style.getPropertyPriority('display')).toBe('important')
+    expect(host.style.getPropertyPriority('transform')).toBe('important')
   })
 })
 
@@ -179,6 +197,112 @@ describe('bubble save-to-vocabulary', () => {
   })
 })
 
+describe('bubble streaming', () => {
+  it('shows the translation growing, with no save control until it completes', async () => {
+    const snapshots: Array<{ text: string | null; hasSave: boolean }> = []
+    const snapshot = () => {
+      snapshots.push({
+        text: root().querySelector('.translation')?.textContent ?? null,
+        hasSave: root().querySelector('.save') !== null,
+      })
+    }
+
+    vi.mocked(translateSelection).mockImplementation(async (_text, _target, _onProgress, onPartial) => {
+      onPartial?.('При')
+      snapshot()
+      onPartial?.('Привіт')
+      snapshot()
+      return RESULT
+    })
+
+    await openBubble('hello world')
+
+    expect(snapshots).toEqual([
+      { text: 'При', hasSave: false },
+      { text: 'Привіт', hasSave: false },
+    ])
+    await vi.waitFor(() => {
+      expect(root().querySelector('.save')).not.toBeNull()
+    })
+  })
+
+  it('keeps the same language picker element across chunks, so the dropdown survives', async () => {
+    const seen: Array<HTMLSelectElement | null> = []
+    vi.mocked(translateSelection).mockImplementation(async (_text, _target, _onProgress, onPartial) => {
+      onPartial?.('При')
+      seen.push(root().querySelector('select'))
+      onPartial?.('Привіт')
+      seen.push(root().querySelector('select'))
+      return RESULT
+    })
+
+    await openBubble('hello world')
+
+    expect(seen[0]).not.toBeNull()
+    // A rebuilt <select> would be a different node — and would dismiss an open dropdown.
+    expect(seen[1]).toBe(seen[0])
+  })
+
+  it('does not translate for a bubble torn down while consent was still pending', async () => {
+    let allowConsent!: (granted: boolean) => void
+    vi.mocked(hasConsent).mockReturnValueOnce(new Promise((resolve) => { allowConsent = resolve }))
+
+    const opening = openBubble('hello world')
+    closeBubble()
+    allowConsent(true)
+    await opening
+
+    expect(translateSelection).not.toHaveBeenCalled()
+    expect(currentBubbleHost()).toBeNull()
+  })
+
+  it('aborts the running translation when the bubble closes', async () => {
+    let captured: AbortSignal | undefined
+    vi.mocked(translateSelection).mockImplementation(async (_text, _target, _onProgress, _onPartial, signal) => {
+      captured = signal
+      return RESULT
+    })
+
+    await openBubble('hello world')
+    expect(captured?.aborted).toBe(false)
+
+    closeBubble()
+    expect(captured?.aborted).toBe(true)
+  })
+
+  it('leaves the screen untouched when a run reports it was aborted', async () => {
+    vi.mocked(translateSelection).mockResolvedValueOnce({ kind: 'aborted' })
+    await openBubble('hello world')
+    expect(root().querySelector('.translation')).toBeNull()
+  })
+
+  it('a replaced bubble whose translation lands late does not hijack the live one', async () => {
+    let landLate!: (outcome: TranslateOutcome) => void
+    vi.mocked(translateSelection).mockImplementationOnce(
+      () => new Promise((resolve) => { landLate = resolve }),
+    )
+
+    const stale = openBubble('stale text')
+    // Let the stale bubble actually start its run while it is still the live one.
+    await vi.waitFor(() => expect(translateSelection).toHaveBeenCalledTimes(1))
+
+    await openBubble('live text')
+
+    landLate(RESULT)
+    await stale
+
+    // The live bubble is still the one on screen...
+    expect(root().querySelector('.translation')?.textContent).toBe('Привіт')
+
+    // ...and it is still the one wired to vocabulary changes.
+    vi.mocked(vocabHas).mockClear()
+    notifyVocabChanged()
+    await vi.waitFor(() => {
+      expect(vocabHas).toHaveBeenCalledWith(expect.objectContaining({ sourceText: 'live text' }))
+    })
+  })
+})
+
 describe('bubble pronunciation', () => {
   it('speaks the original text in the detected source language', async () => {
     await openBubble('hello world')
@@ -198,6 +322,6 @@ describe('bubble pronunciation', () => {
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     expect(stopSpeaking).toHaveBeenCalled()
-    expect(document.getElementById(HOST_ID)).toBeNull()
+    expect(currentBubbleHost()).toBeNull()
   })
 })

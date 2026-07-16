@@ -25,7 +25,7 @@ declare class Translator {
     targetLanguage: string
   }): Promise<AIAvailability>
   static create(options: TranslatorCreateOptions): Promise<Translator>
-  translate(text: string): Promise<string>
+  translateStreaming(text: string): AsyncIterable<string>
   destroy(): void
 }
 

@@ -1,6 +1,6 @@
 import { notifyVocabChanged, openBubble } from './lib/bubble'
 import type { Message } from './lib/messages'
-import { installSelectionIcon } from './lib/selection-icon'
+import { hideSelectionIcon, installSelectionIcon } from './lib/selection-icon'
 import { loadVoicePrefs } from './lib/voice-prefs'
 
 declare global {
@@ -15,6 +15,8 @@ if (!window.__extTranslatorLoaded) {
   installSelectionIcon()
   chrome.runtime.onMessage.addListener((message: Message) => {
     if (message.type === 'translate-selection') {
+      // The context menu is the other way in; the icon must go either way.
+      hideSelectionIcon()
       void openBubble(message.text)
     } else if (message.type === 'vocab-changed') {
       notifyVocabChanged()
