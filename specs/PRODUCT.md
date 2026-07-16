@@ -10,10 +10,10 @@ text to a cloud service or stop at translation without helping you retain vocabu
 
 ## What the product does now
 
-Translates text the user selects on a webpage, fully on-device via the browser's
-built-in translation model, reads the original aloud on request, and lets the reader save
-any translation into a personal vocabulary browsed from a side panel. Nothing leaves the
-browser.
+Translates text the user selects on a webpage — from an icon at the selection or from the
+context menu — fully on-device via the browser's built-in translation model, reads the
+original aloud on request, and lets the reader save any translation into a personal
+vocabulary browsed from a side panel. Nothing leaves the browser.
 
 ## Capabilities
 
@@ -22,7 +22,9 @@ browser.
 | Select-to-translate with on-device model     | 001  | implemented |
 | Personal vocabulary (save translations)      | 002  | implemented |
 | Pronunciation (text-to-speech)               | 003  | implemented |
-| Flashcard training (multiple-choice)         | 004  | planned  |
+| Selection icon trigger                       | 004  | implemented |
+| Long text translation                        | 005  | draft |
+| Flashcard training (multiple-choice)         | 006  | planned  |
 
 ## Release strategy
 
@@ -30,6 +32,10 @@ browser.
   translation APIs are desktop-only).
 - Privacy stance is the product: all processing on-device, no network calls of our own,
   no accounts, no telemetry. Store listing and privacy disclosures must state exactly this.
+- Spec 004 trades minimal permissions for one-click translation: the extension runs on all
+  http(s) pages, so installation shows the "read your data on all websites" warning and
+  store review is deeper. The permission justification must explain that page access
+  exists only to read the user's own selection and render the bubble locally.
 - Before first store submission: privacy policy URL, in-product first-run disclosure with
   explicit consent, per-permission justifications, listing assets (icon 128×128,
   screenshots 1280×800, promo tile 440×280), reviewer test instructions describing the

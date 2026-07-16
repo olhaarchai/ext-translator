@@ -2,6 +2,7 @@ import { defaultTargetLanguage } from './languages'
 
 const CONSENT_KEY = 'consentGiven'
 const TARGET_KEY = 'targetLanguage'
+const SELECTION_ICON_KEY = 'selectionIconEnabled'
 
 export async function hasConsent(): Promise<boolean> {
   const stored = await chrome.storage.local.get(CONSENT_KEY)
@@ -21,4 +22,13 @@ export async function getTargetLanguage(): Promise<string> {
 
 export async function setTargetLanguage(code: string): Promise<void> {
   await chrome.storage.local.set({ [TARGET_KEY]: code })
+}
+
+export async function isSelectionIconEnabled(): Promise<boolean> {
+  const stored = await chrome.storage.local.get(SELECTION_ICON_KEY)
+  return stored[SELECTION_ICON_KEY] !== false
+}
+
+export async function setSelectionIconEnabled(enabled: boolean): Promise<void> {
+  await chrome.storage.local.set({ [SELECTION_ICON_KEY]: enabled })
 }
