@@ -1,4 +1,6 @@
-export const MAX_CHARS = 4000
+// Not an API limit: the browser documents none. This is a guard against a page-sized
+// selection, because translations run sequentially and one huge job blocks every later one.
+export const MAX_CHARS = 50_000
 
 export type TranslateProgress =
   | { kind: 'detecting' }
@@ -16,12 +18,15 @@ export type TranslateError =
 export type TranslateOutcome =
   | { kind: 'result'; translation: string; sourceLanguage: string; truncated: boolean }
   | { kind: 'same-language'; language: string }
+  | { kind: 'aborted' }
   | { kind: 'error'; error: TranslateError; sourceLanguage?: string }
 
 export async function translateSelection(
   rawText: string,
   targetLanguage: string,
   onProgress: (progress: TranslateProgress) => void,
+  onPartial?: (translation: string) => void,
+  signal?: AbortSignal,
 ): Promise<TranslateOutcome> {
   if (!('Translator' in globalThis) || !('LanguageDetector' in globalThis)) {
     return { kind: 'error', error: 'unsupported-browser' }
@@ -76,13 +81,30 @@ export async function translateSelection(
 
   try {
     onProgress({ kind: 'translating' })
-    const translation = await translator.translate(text)
+    let translation = ''
+    for await (const chunk of translator.translateStreaming(text)) {
+      if (signal?.aborted) return { kind: 'aborted' }
+      translation = mergeChunk(translation, chunk)
+      onPartial?.(translation)
+    }
+    if (signal?.aborted) return { kind: 'aborted' }
     return { kind: 'result', translation, sourceLanguage, truncated }
   } catch {
+    if (signal?.aborted) return { kind: 'aborted' }
     return { kind: 'error', error: 'translation-failed', sourceLanguage }
   } finally {
     translator.destroy()
   }
+}
+
+/**
+ * The streaming call is documented for long text but not on whether a chunk carries only
+ * the new piece or everything so far, so handle both: a chunk that extends what we have
+ * replaces it, anything else is appended.
+ */
+function mergeChunk(soFar: string, chunk: string): string {
+  if (soFar !== '' && chunk.length > soFar.length && chunk.startsWith(soFar)) return chunk
+  return soFar + chunk
 }
 
 const MAX_CANDIDATES = 5

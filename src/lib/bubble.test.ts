@@ -179,6 +179,56 @@ describe('bubble save-to-vocabulary', () => {
   })
 })
 
+describe('bubble streaming', () => {
+  it('shows the translation growing, with no save control until it completes', async () => {
+    const snapshots: Array<{ text: string | null; hasSave: boolean }> = []
+    const snapshot = () => {
+      snapshots.push({
+        text: root().querySelector('.translation')?.textContent ?? null,
+        hasSave: root().querySelector('.save') !== null,
+      })
+    }
+
+    vi.mocked(translateSelection).mockImplementation(async (_text, _target, _onProgress, onPartial) => {
+      onPartial?.('При')
+      snapshot()
+      onPartial?.('Привіт')
+      snapshot()
+      return RESULT
+    })
+
+    await openBubble('hello world')
+
+    expect(snapshots).toEqual([
+      { text: 'При', hasSave: false },
+      { text: 'Привіт', hasSave: false },
+    ])
+    await vi.waitFor(() => {
+      expect(root().querySelector('.save')).not.toBeNull()
+    })
+  })
+
+  it('aborts the running translation when the bubble closes', async () => {
+    let captured: AbortSignal | undefined
+    vi.mocked(translateSelection).mockImplementation(async (_text, _target, _onProgress, _onPartial, signal) => {
+      captured = signal
+      return RESULT
+    })
+
+    await openBubble('hello world')
+    expect(captured?.aborted).toBe(false)
+
+    closeBubble()
+    expect(captured?.aborted).toBe(true)
+  })
+
+  it('leaves the screen untouched when a run reports it was aborted', async () => {
+    vi.mocked(translateSelection).mockResolvedValueOnce({ kind: 'aborted' })
+    await openBubble('hello world')
+    expect(root().querySelector('.translation')).toBeNull()
+  })
+})
+
 describe('bubble pronunciation', () => {
   it('speaks the original text in the detected source language', async () => {
     await openBubble('hello world')

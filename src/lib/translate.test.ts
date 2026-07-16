@@ -15,11 +15,19 @@ function stubTranslator(options: {
   createError?: unknown
   downloadEvents?: number[]
   translateError?: unknown
+  chunks?: (text: string) => string[]
+  onChunkYielded?: () => void
 } = {}) {
   const destroy = vi.fn()
-  const translate = vi.fn(async (text: string) => {
-    if (options.translateError) throw options.translateError
-    return `[[${text}]]`
+  const translateStreaming = vi.fn((text: string) => {
+    const chunks = options.chunks ? options.chunks(text) : [`[[${text}]]`]
+    return (async function* () {
+      if (options.translateError) throw options.translateError
+      for (const chunk of chunks) {
+        yield chunk
+        options.onChunkYielded?.()
+      }
+    })()
   })
   const create = vi.fn(async (createOptions: TranslatorCreateOptions) => {
     if (options.createError) throw options.createError
@@ -30,7 +38,7 @@ function stubTranslator(options: {
         target.dispatchEvent(Object.assign(new Event('downloadprogress'), { loaded }))
       }
     }
-    return { translate, destroy }
+    return { translateStreaming, destroy }
   })
   vi.stubGlobal('Translator', {
     availability: vi.fn(async (probe: { sourceLanguage: string }) => {
@@ -40,7 +48,7 @@ function stubTranslator(options: {
     }),
     create,
   })
-  return { create, translate, destroy }
+  return { create, translateStreaming, destroy }
 }
 
 afterEach(() => {
@@ -138,16 +146,78 @@ describe('translateSelection', () => {
     expect(outcome).toEqual({ kind: 'error', error: 'download-failed', sourceLanguage: 'en' })
   })
 
-  it('truncates long selections and flags it', async () => {
+  it('truncates only above the safety ceiling, and flags it', async () => {
     stubLanguageDetector([{ detectedLanguage: 'en', confidence: 0.9 }])
-    const { translate } = stubTranslator()
+    const { translateStreaming } = stubTranslator()
     const long = 'a'.repeat(MAX_CHARS + 100)
     const outcome = await translateSelection(long, 'uk', () => {})
     expect(outcome.kind).toBe('result')
     if (outcome.kind === 'result') {
       expect(outcome.truncated).toBe(true)
     }
-    expect(translate).toHaveBeenCalledWith('a'.repeat(MAX_CHARS))
+    expect(translateStreaming).toHaveBeenCalledWith('a'.repeat(MAX_CHARS))
+  })
+
+  it('translates text far beyond the old 4000-character limit in full', async () => {
+    stubLanguageDetector([{ detectedLanguage: 'en', confidence: 0.9 }])
+    const { translateStreaming } = stubTranslator()
+    const long = 'a'.repeat(10_000)
+    const outcome = await translateSelection(long, 'uk', () => {})
+    expect(outcome.kind).toBe('result')
+    if (outcome.kind === 'result') {
+      expect(outcome.truncated).toBe(false)
+    }
+    expect(translateStreaming).toHaveBeenCalledWith(long)
+  })
+
+  it('assembles incremental chunks (each chunk is only the new piece)', async () => {
+    stubLanguageDetector([{ detectedLanguage: 'en', confidence: 0.9 }])
+    stubTranslator({ chunks: () => ['При', 'віт ', 'світ'] })
+    const outcome = await translateSelection('hello world', 'uk', () => {})
+    expect(outcome).toMatchObject({ kind: 'result', translation: 'Привіт світ' })
+  })
+
+  it('assembles cumulative chunks (each chunk repeats everything so far)', async () => {
+    stubLanguageDetector([{ detectedLanguage: 'en', confidence: 0.9 }])
+    stubTranslator({ chunks: () => ['При', 'Привіт ', 'Привіт світ'] })
+    const outcome = await translateSelection('hello world', 'uk', () => {})
+    expect(outcome).toMatchObject({ kind: 'result', translation: 'Привіт світ' })
+  })
+
+  it('does not mistake a repeated incremental chunk for a cumulative one', async () => {
+    stubLanguageDetector([{ detectedLanguage: 'en', confidence: 0.9 }])
+    stubTranslator({ chunks: () => ['a', 'a'] })
+    const outcome = await translateSelection('aa', 'uk', () => {})
+    expect(outcome).toMatchObject({ kind: 'result', translation: 'aa' })
+  })
+
+  it('reports the translation growing, partial by partial', async () => {
+    stubLanguageDetector([{ detectedLanguage: 'en', confidence: 0.9 }])
+    stubTranslator({ chunks: () => ['При', 'віт'] })
+    const partials: string[] = []
+    await translateSelection('hello', 'uk', () => {}, (partial) => partials.push(partial))
+    expect(partials).toEqual(['При', 'Привіт'])
+  })
+
+  it('stops and reports aborted when the signal fires mid-stream', async () => {
+    stubLanguageDetector([{ detectedLanguage: 'en', confidence: 0.9 }])
+    const controller = new AbortController()
+    const partials: string[] = []
+    stubTranslator({
+      chunks: () => ['При', 'віт', ' світ'],
+      onChunkYielded: () => controller.abort(),
+    })
+
+    const outcome = await translateSelection(
+      'hello',
+      'uk',
+      () => {},
+      (partial) => partials.push(partial),
+      controller.signal,
+    )
+
+    expect(outcome).toEqual({ kind: 'aborted' })
+    expect(partials).toEqual(['При'])
   })
 
   it('reports translation failure and still destroys the translator', async () => {
