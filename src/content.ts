@@ -1,5 +1,6 @@
 import { notifyVocabChanged, openBubble } from './lib/bubble'
 import type { Message } from './lib/messages'
+import { loadVoicePrefs } from './lib/voice-prefs'
 
 declare global {
   interface Window {
@@ -9,6 +10,7 @@ declare global {
 
 if (!window.__extTranslatorLoaded) {
   window.__extTranslatorLoaded = true
+  void loadVoicePrefs()
   chrome.runtime.onMessage.addListener((message: Message) => {
     if (message.type === 'translate-selection') {
       void openBubble(message.text)

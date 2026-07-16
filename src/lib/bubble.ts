@@ -7,6 +7,9 @@ import {
   type TranslateOutcome,
   type TranslateProgress,
 } from './translate'
+import { speakerButton } from './speaker-button'
+import { stopSpeaking } from './speech'
+import { voicePicker } from './voice-picker'
 import { vocabAdd, vocabHas, vocabRemove } from './vocab-client'
 import { keyOf, normalizeSourceText, type VocabEntry } from './vocab-types'
 
@@ -69,6 +72,7 @@ export async function openBubble(fallbackText: string): Promise<void> {
 }
 
 export function closeBubble(): void {
+  stopSpeaking()
   teardown?.()
   teardown = null
   refreshSaved = null
@@ -118,7 +122,13 @@ class Bubble {
     const nodes: HTMLElement[] = []
 
     if (outcome.kind === 'result') {
-      nodes.push(el('p', 'meta', `${languageLabel(outcome.sourceLanguage)} → ${languageLabel(target)}`))
+      const header = el('div', 'head')
+      header.append(el('span', 'meta', `${languageLabel(outcome.sourceLanguage)} → ${languageLabel(target)}`))
+      const speaker = speakerButton(this.text, outcome.sourceLanguage)
+      if (speaker) header.append(speaker)
+      const picker = voicePicker(outcome.sourceLanguage)
+      if (picker) header.append(picker)
+      nodes.push(header)
       nodes.push(el('p', 'translation', outcome.translation))
       if (outcome.truncated) {
         nodes.push(el('p', 'meta', `Only the first ${MAX_CHARS} characters were translated.`))
@@ -298,6 +308,35 @@ const BUBBLE_CSS = `
   font-size: 12px;
   opacity: 0.7;
 }
+.head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.head .meta {
+  margin: 0;
+}
+.voice {
+  font: inherit;
+  font-size: 12px;
+  max-width: 130px;
+  margin-left: auto;
+}
+.speak {
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  padding: 2px 6px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+.speak:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
 .save {
   margin: 6px 0 2px;
 }
@@ -336,6 +375,9 @@ select {
   }
   .action:hover {
     background: #3d3d3d;
+  }
+  .speak {
+    border-color: rgba(255, 255, 255, 0.25);
   }
 }
 `

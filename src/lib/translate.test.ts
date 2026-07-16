@@ -11,7 +11,7 @@ function stubLanguageDetector(candidates: LanguageDetectionResult[]) {
 }
 
 function stubTranslator(options: {
-  availability?: AIAvailability
+  availability?: AIAvailability | ((sourceLanguage: string) => AIAvailability)
   createError?: unknown
   downloadEvents?: number[]
   translateError?: unknown
@@ -33,7 +33,11 @@ function stubTranslator(options: {
     return { translate, destroy }
   })
   vi.stubGlobal('Translator', {
-    availability: vi.fn(async () => options.availability ?? 'available'),
+    availability: vi.fn(async (probe: { sourceLanguage: string }) => {
+      const availability = options.availability
+      if (typeof availability === 'function') return availability(probe.sourceLanguage)
+      return availability ?? 'available'
+    }),
     create,
   })
   return { create, translate, destroy }
@@ -88,6 +92,26 @@ describe('translateSelection', () => {
     stubTranslator({ availability: 'unavailable' })
     const outcome = await translateSelection('hello', 'uk', () => {})
     expect(outcome).toEqual({ kind: 'error', error: 'pair-unavailable', sourceLanguage: 'en' })
+  })
+
+  it('falls back to the next candidate when the top language pair is unavailable', async () => {
+    stubLanguageDetector([
+      { detectedLanguage: 'la', confidence: 0.6 },
+      { detectedLanguage: 'en', confidence: 0.3 },
+    ])
+    stubTranslator({ availability: (lang) => (lang === 'en' ? 'available' : 'unavailable') })
+    const outcome = await translateSelection('Senatus', 'uk', () => {})
+    expect(outcome).toEqual({ kind: 'result', translation: '[[Senatus]]', sourceLanguage: 'en', truncated: false })
+  })
+
+  it('reports the top candidate when no candidate pair is available', async () => {
+    stubLanguageDetector([
+      { detectedLanguage: 'la', confidence: 0.6 },
+      { detectedLanguage: 'en', confidence: 0.3 },
+    ])
+    stubTranslator({ availability: 'unavailable' })
+    const outcome = await translateSelection('Senatus', 'uk', () => {})
+    expect(outcome).toEqual({ kind: 'error', error: 'pair-unavailable', sourceLanguage: 'la' })
   })
 
   it('surfaces download progress events', async () => {

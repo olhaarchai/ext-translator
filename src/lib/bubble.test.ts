@@ -22,8 +22,18 @@ vi.mock('./vocab-client', () => ({
   vocabRemove: vi.fn(async () => {}),
 }))
 
+vi.mock('./speech', () => ({
+  speechAvailable: () => true,
+  hasVoiceFor: () => true,
+  speakToggle: vi.fn(),
+  onVoicesChanged: () => {},
+  stopSpeaking: vi.fn(),
+  voicesForLanguage: () => [],
+}))
+
 import { bubbleRootForTest, closeBubble, openBubble } from './bubble'
 import { grantConsent, hasConsent } from './settings'
+import { speakToggle, stopSpeaking } from './speech'
 import { translateSelection } from './translate'
 import { vocabAdd, vocabHas, vocabRemove } from './vocab-client'
 
@@ -166,5 +176,28 @@ describe('bubble save-to-vocabulary', () => {
       expect(root().querySelector('.message')).not.toBeNull()
     })
     expect(root().querySelector('.save')).toBeNull()
+  })
+})
+
+describe('bubble pronunciation', () => {
+  it('speaks the original text in the detected source language', async () => {
+    await openBubble('hello world')
+    await vi.waitFor(() => expect(root().querySelector('.speak')).not.toBeNull())
+
+    const speaker = root().querySelector('.speak') as HTMLButtonElement
+    const event = new MouseEvent('click', { bubbles: true })
+    Object.defineProperty(event, 'isTrusted', { value: true })
+    speaker.dispatchEvent(event)
+
+    expect(speakToggle).toHaveBeenCalledWith('hello world', 'en')
+  })
+
+  it('stops playback when the bubble is closed', async () => {
+    await openBubble('hello world')
+    vi.mocked(stopSpeaking).mockClear()
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    expect(stopSpeaking).toHaveBeenCalled()
+    expect(document.getElementById(HOST_ID)).toBeNull()
   })
 })
