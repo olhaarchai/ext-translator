@@ -1,6 +1,6 @@
 # 004 — Selection icon trigger
 
-Status: accepted (2026-07-16)
+Status: implemented (2026-07-16)
 
 ## Why
 
