@@ -22,7 +22,8 @@ browser.
 | Select-to-translate with on-device model     | 001  | implemented |
 | Personal vocabulary (save translations)      | 002  | implemented |
 | Pronunciation (text-to-speech)               | 003  | implemented |
-| Flashcard training (multiple-choice)         | 004  | planned  |
+| Selection icon trigger                       | 004  | accepted |
+| Flashcard training (multiple-choice)         | 005  | planned  |
 
 ## Release strategy
 
@@ -30,6 +31,10 @@ browser.
   translation APIs are desktop-only).
 - Privacy stance is the product: all processing on-device, no network calls of our own,
   no accounts, no telemetry. Store listing and privacy disclosures must state exactly this.
+- Spec 004 trades minimal permissions for one-click translation: the extension runs on all
+  http(s) pages, so installation shows the "read your data on all websites" warning and
+  store review is deeper. The permission justification must explain that page access
+  exists only to read the user's own selection and render the bubble locally.
 - Before first store submission: privacy policy URL, in-product first-run disclosure with
   explicit consent, per-permission justifications, listing assets (icon 128×128,
   screenshots 1280×800, promo tile 440×280), reviewer test instructions describing the

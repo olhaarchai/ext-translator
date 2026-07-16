@@ -125,6 +125,15 @@
         padding: 20px 4px;
         text-align: center;
       }
+      .setting {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        margin-bottom: 10px;
+        color: var(--muted);
+        font-size: 12px;
+        cursor: pointer;
+      }
     </style>
   </head>
   <body>
@@ -132,6 +141,10 @@
       <h1>Vocabulary</h1>
       <span id="count"></span>
     </header>
+    <label class="setting">
+      <input id="icon-toggle" type="checkbox" />
+      Show icon when I select text
+    </label>
     <input id="filter" type="search" placeholder="Filter…" autocomplete="off" />
     <div id="list"></div>
     <script src="sidepanel.js"></script>

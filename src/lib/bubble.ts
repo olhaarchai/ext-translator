@@ -1,3 +1,4 @@
+import { BUBBLE_WIDTH, bubblePosition, clampTop, type AnchorRect } from './bubble-position'
 import { SUPPORTED_TARGETS, languageLabel } from './languages'
 import { getTargetLanguage, grantConsent, hasConsent, setTargetLanguage } from './settings'
 import {
@@ -14,7 +15,6 @@ import { vocabAdd, vocabHas, vocabRemove } from './vocab-client'
 import { keyOf, normalizeSourceText, type VocabEntry } from './vocab-types'
 
 const HOST_ID = 'ext-translator-host'
-const BUBBLE_WIDTH = 340
 
 let teardown: (() => void) | null = null
 let activeRoot: HTMLElement | null = null
@@ -34,6 +34,7 @@ export async function openBubble(fallbackText: string): Promise<void> {
   const text = (currentSelectionText() || fallbackText).trim()
   if (text === '') return
 
+  const anchor = selectionAnchorRect()
   const host = document.createElement('div')
   host.id = HOST_ID
   const shadow = host.attachShadow({ mode: 'closed' })
@@ -43,7 +44,6 @@ export async function openBubble(fallbackText: string): Promise<void> {
   shadow.appendChild(style)
 
   const root = el('div', 'bubble')
-  applyPosition(root)
   shadow.appendChild(root)
   activeRoot = root
   document.documentElement.appendChild(host)
@@ -63,7 +63,7 @@ export async function openBubble(fallbackText: string): Promise<void> {
     activeRoot = null
   }
 
-  const bubble = new Bubble(root, text)
+  const bubble = new Bubble(root, text, anchor)
   if (await hasConsent()) {
     await bubble.start()
   } else {
@@ -84,7 +84,26 @@ class Bubble {
   constructor(
     private readonly root: HTMLElement,
     private readonly text: string,
+    private readonly anchor: AnchorRect | null,
   ) {}
+
+  private placedTop: number | null = null
+
+  private place(): void {
+    const height = this.root.offsetHeight
+
+    // Anchor once. Later renders only re-clamp: by then the user may have scrolled, and
+    // the anchor would point at text that is no longer where it was.
+    if (this.placedTop === null) {
+      const { top, left } = bubblePosition(this.anchor, height, window.innerWidth, window.innerHeight)
+      this.placedTop = top
+      this.root.style.left = `${left}px`
+    } else {
+      this.placedTop = clampTop(this.placedTop, height, window.innerHeight)
+    }
+
+    this.root.style.top = `${this.placedTop}px`
+  }
 
   renderConsent(): void {
     const message = el(
@@ -97,6 +116,7 @@ class Bubble {
       void grantConsent().then(() => this.start())
     })
     this.root.replaceChildren(message, agree)
+    this.place()
   }
 
   async start(): Promise<void> {
@@ -115,6 +135,7 @@ class Bubble {
   private renderStatus(text: string): void {
     refreshSaved = null
     this.root.replaceChildren(el('p', 'message', text))
+    this.place()
   }
 
   private renderOutcome(outcome: TranslateOutcome, target: string): void {
@@ -149,6 +170,7 @@ class Bubble {
       nodes.push(this.footer(target))
     }
     this.root.replaceChildren(...nodes)
+    this.place()
   }
 
   private entryFor(outcome: Extract<TranslateOutcome, { kind: 'result' }>, target: string): VocabEntry {
@@ -235,28 +257,13 @@ function currentSelectionText(): string {
   return window.getSelection()?.toString() ?? ''
 }
 
-function applyPosition(root: HTMLElement): void {
-  const rect = selectionRect()
-  if (!rect) {
-    root.style.top = '16px'
-    root.style.left = '50%'
-    root.style.transform = 'translateX(-50%)'
-    return
-  }
-  const left = Math.min(Math.max(8, rect.left), Math.max(8, window.innerWidth - BUBBLE_WIDTH - 8))
-  root.style.left = `${left}px`
-  if (rect.bottom + 240 <= window.innerHeight) {
-    root.style.top = `${rect.bottom + 8}px`
-  } else {
-    root.style.top = `${Math.max(8, rect.top - 8)}px`
-    root.style.transform = 'translateY(-100%)'
-  }
-}
-
-function selectionRect(): DOMRect | null {
+// Anchor to the selection's first line, so a multi-line selection does not drag the
+// bubble to the far corner of its bounding box.
+function selectionAnchorRect(): AnchorRect | null {
   const selection = window.getSelection()
   if (!selection || selection.rangeCount === 0) return null
-  const rect = selection.getRangeAt(0).getBoundingClientRect()
+  const range = selection.getRangeAt(0)
+  const rect = range.getClientRects()[0] ?? range.getBoundingClientRect()
   if (rect.width === 0 && rect.height === 0) return null
   return rect
 }
@@ -288,6 +295,8 @@ const BUBBLE_CSS = `
   z-index: 2147483647;
   width: ${BUBBLE_WIDTH}px;
   max-width: calc(100vw - 16px);
+  max-height: 60vh;
+  overflow-y: auto;
   box-sizing: border-box;
   padding: 12px;
   background: #ffffff;

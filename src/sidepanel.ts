@@ -1,4 +1,5 @@
 import { languageLabel } from './lib/languages'
+import { isSelectionIconEnabled, setSelectionIconEnabled } from './lib/settings'
 import { onVoicesChanged } from './lib/speech'
 import { speakerButton } from './lib/speaker-button'
 import { vocabList, vocabRemove } from './lib/vocab-client'
@@ -9,6 +10,7 @@ import { loadVoicePrefs } from './lib/voice-prefs'
 const listEl = requireEl('list')
 const countEl = requireEl('count')
 const filterEl = requireEl('filter') as HTMLInputElement
+const iconToggleEl = requireEl('icon-toggle') as HTMLInputElement
 
 let entries: VocabEntry[] = []
 
@@ -82,11 +84,20 @@ function text(tag: string, className: string, content: string): HTMLElement {
 
 filterEl.addEventListener('input', render)
 
+iconToggleEl.addEventListener('change', () => {
+  void setSelectionIconEnabled(iconToggleEl.checked)
+})
+
 chrome.runtime.onMessage.addListener((message: { type?: string }) => {
   if (message?.type === 'vocab-changed') void load()
 })
 
 onVoicesChanged(render)
 
+async function loadIconSetting(): Promise<void> {
+  iconToggleEl.checked = await isSelectionIconEnabled()
+}
+
 void loadVoicePrefs()
+void loadIconSetting()
 void load()
