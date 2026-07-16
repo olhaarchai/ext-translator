@@ -31,16 +31,14 @@ export async function translateSelection(
   const text = truncated ? rawText.slice(0, MAX_CHARS) : rawText
 
   onProgress({ kind: 'detecting' })
-  let sourceLanguage: string
+  let candidates: string[]
   try {
     const detector = await LanguageDetector.create()
     try {
-      const candidates = await detector.detect(text)
-      const top = candidates[0]
-      if (!top || top.detectedLanguage === '' || top.detectedLanguage === 'und') {
-        return { kind: 'error', error: 'detection-failed' }
-      }
-      sourceLanguage = top.detectedLanguage
+      const detected = await detector.detect(text)
+      candidates = detected
+        .map((candidate) => candidate.detectedLanguage)
+        .filter((lang) => lang !== '' && lang !== 'und')
     } finally {
       detector.destroy()
     }
@@ -48,17 +46,17 @@ export async function translateSelection(
     return { kind: 'error', error: mapCreateError(error, 'detection-failed') }
   }
 
-  if (sourceLanguage === targetLanguage) {
+  const primary = candidates[0]
+  if (primary === undefined) {
+    return { kind: 'error', error: 'detection-failed' }
+  }
+  if (primary === targetLanguage) {
     return { kind: 'same-language', language: targetLanguage }
   }
 
-  try {
-    const availability = await Translator.availability({ sourceLanguage, targetLanguage })
-    if (availability === 'unavailable') {
-      return { kind: 'error', error: 'pair-unavailable', sourceLanguage }
-    }
-  } catch {
-    return { kind: 'error', error: 'pair-unavailable', sourceLanguage }
+  const sourceLanguage = await firstAvailableSource(candidates, targetLanguage)
+  if (sourceLanguage === null) {
+    return { kind: 'error', error: 'pair-unavailable', sourceLanguage: primary }
   }
 
   let translator: Translator
@@ -85,6 +83,23 @@ export async function translateSelection(
   } finally {
     translator.destroy()
   }
+}
+
+const MAX_CANDIDATES = 5
+
+async function firstAvailableSource(candidates: string[], target: string): Promise<string | null> {
+  const seen = new Set<string>()
+  for (const lang of candidates.slice(0, MAX_CANDIDATES)) {
+    if (lang === target || seen.has(lang)) continue
+    seen.add(lang)
+    try {
+      const availability = await Translator.availability({ sourceLanguage: lang, targetLanguage: target })
+      if (availability !== 'unavailable') return lang
+    } catch {
+      // Treat a failed availability probe as unavailable and try the next candidate.
+    }
+  }
+  return null
 }
 
 function mapCreateError(error: unknown, fallback: TranslateError): TranslateError {
