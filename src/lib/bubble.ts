@@ -19,6 +19,7 @@ const HOST_ID = 'ext-translator-host'
 let teardown: (() => void) | null = null
 let activeRoot: HTMLElement | null = null
 let refreshSaved: (() => void) | null = null
+let currentRun: AbortController | null = null
 
 export function bubbleRootForTest(): HTMLElement | null {
   return activeRoot
@@ -73,6 +74,8 @@ export async function openBubble(fallbackText: string): Promise<void> {
 
 export function closeBubble(): void {
   stopSpeaking()
+  currentRun?.abort()
+  currentRun = null
   teardown?.()
   teardown = null
   refreshSaved = null
@@ -125,11 +128,34 @@ class Bubble {
 
   private async run(target: string): Promise<void> {
     const id = ++this.runId
+
+    // Switching target language mid-stream must stop the previous translation, or its
+    // remaining chunks would keep arriving behind the new one.
+    currentRun?.abort()
+    const controller = new AbortController()
+    currentRun = controller
+
     this.renderStatus('Detecting language…')
-    const outcome = await translateSelection(this.text, target, (progress) => {
-      if (id === this.runId) this.renderStatus(progressText(progress))
-    })
+    const outcome = await translateSelection(
+      this.text,
+      target,
+      (progress) => {
+        if (id === this.runId) this.renderStatus(progressText(progress))
+      },
+      (partial) => {
+        if (id === this.runId) this.renderPartial(partial)
+      },
+      controller.signal,
+    )
     if (id === this.runId) this.renderOutcome(outcome, target)
+  }
+
+  private renderPartial(translation: string): void {
+    refreshSaved = null
+    const header = el('div', 'head')
+    header.append(el('span', 'meta', 'Translating…'))
+    this.root.replaceChildren(header, el('p', 'translation', translation))
+    this.place()
   }
 
   private renderStatus(text: string): void {
@@ -139,6 +165,9 @@ class Bubble {
   }
 
   private renderOutcome(outcome: TranslateOutcome, target: string): void {
+    // An aborted run leaves whatever replaced it on screen.
+    if (outcome.kind === 'aborted') return
+
     refreshSaved = null
     const nodes: HTMLElement[] = []
 
@@ -291,6 +320,7 @@ const BUBBLE_CSS = `
   all: initial;
 }
 .bubble {
+  --bubble-bg: #ffffff;
   position: fixed;
   z-index: 2147483647;
   width: ${BUBBLE_WIDTH}px;
@@ -299,7 +329,7 @@ const BUBBLE_CSS = `
   overflow-y: auto;
   box-sizing: border-box;
   padding: 12px;
-  background: #ffffff;
+  background: var(--bubble-bg);
   color: #1a1a1a;
   border: 1px solid rgba(0, 0, 0, 0.15);
   border-radius: 10px;
@@ -321,7 +351,14 @@ const BUBBLE_CSS = `
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 6px;
+  position: sticky;
+  /* Pull up over the bubble's own padding: it scrolls too, so text would otherwise
+     show through the gap above a header pinned at top: 0. */
+  top: -12px;
+  z-index: 1;
+  background: var(--bubble-bg);
+  margin: -12px -12px 6px;
+  padding: 12px 12px 6px;
 }
 .head .meta {
   margin: 0;
@@ -374,7 +411,7 @@ select {
 }
 @media (prefers-color-scheme: dark) {
   .bubble {
-    background: #242424;
+    --bubble-bg: #242424;
     color: #ececec;
     border-color: rgba(255, 255, 255, 0.15);
   }
