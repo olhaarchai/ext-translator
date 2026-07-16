@@ -45,10 +45,10 @@ invoking it first, which is a deliberate trade-off recorded in the contract belo
 ## Contract
 
 - The extension runs a content script automatically on all http(s) pages in the top
-  frame. This supersedes spec 001's contract of "no host permissions; page access happens
-  only on explicit user invocation": the extension now has access to page content on
-  every http(s) page, and the browser shows the corresponding permission warning at
-  install time.
+  frame. This supersedes the "no host permissions" clause in specs 001 and 002 (spec 001
+  also said "page access happens only on explicit user invocation"): the extension now has
+  access to page content on every http(s) page, and the browser shows the corresponding
+  permission warning at install time.
 - Requested permissions become exactly: `contextMenus`, `activeTab`, `scripting`,
   `storage`, `sidePanel`, plus automatic content-script matches on `http://*/*` and
   `https://*/*`.

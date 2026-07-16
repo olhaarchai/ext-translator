@@ -47,4 +47,41 @@ describe('voice preferences', () => {
     await loadVoicePrefs()
     expect(preferredVoiceURI('en')).toBe('voice://daniel')
   })
+
+  it('keeps a preference written by another context while the initial read was in flight', async () => {
+    // Seeded, so the in-flight snapshot carries a real older value — that is what would
+    // clobber the newer write.
+    const store: Record<string, unknown> = { voicePrefs: { en: 'voice://old' } }
+    const listeners: Array<(changes: Record<string, { newValue?: unknown }>, area: string) => void> = []
+    let releaseRead!: () => void
+    const gate = new Promise<void>((resolve) => { releaseRead = resolve })
+
+    vi.stubGlobal('chrome', {
+      storage: {
+        local: {
+          // The snapshot is taken when the read is issued, and only handed back later.
+          get: vi.fn(async (key: string) => {
+            const snapshot = key in store ? { [key]: store[key] } : {}
+            await gate
+            return snapshot
+          }),
+          set: vi.fn(async () => {}),
+        },
+        onChanged: {
+          addListener: (fn: (typeof listeners)[number]) => listeners.push(fn),
+        },
+      },
+    })
+
+    const loading = loadVoicePrefs()
+
+    // Another context (the side panel) stores a voice while our read is still pending.
+    store.voicePrefs = { en: 'voice://fresh' }
+    for (const fn of listeners) fn({ voicePrefs: { newValue: { en: 'voice://fresh' } } }, 'local')
+
+    releaseRead()
+    await loading
+
+    expect(preferredVoiceURI('en')).toBe('voice://fresh')
+  })
 })

@@ -1,4 +1,5 @@
 import { BUBBLE_WIDTH, bubblePosition, clampTop, type AnchorRect } from './bubble-position'
+import { hardenHost, randomHostId } from './extension-host'
 import { SUPPORTED_TARGETS, languageLabel } from './languages'
 import { getTargetLanguage, grantConsent, hasConsent, setTargetLanguage } from './settings'
 import {
@@ -9,20 +10,27 @@ import {
   type TranslateProgress,
 } from './translate'
 import { speakerButton } from './speaker-button'
-import { stopSpeaking } from './speech'
+import { onVoicesChanged, stopSpeaking } from './speech'
 import { voicePicker } from './voice-picker'
 import { vocabAdd, vocabHas, vocabRemove } from './vocab-client'
 import { keyOf, normalizeSourceText, type VocabEntry } from './vocab-types'
 
-const HOST_ID = 'ext-translator-host'
+const HOST_ID = randomHostId()
 
 let teardown: (() => void) | null = null
 let activeRoot: HTMLElement | null = null
+let activeHost: HTMLElement | null = null
 let refreshSaved: (() => void) | null = null
-let currentRun: AbortController | null = null
+let rerenderOutcome: (() => void) | null = null
+let activeBubble: Bubble | null = null
+let voicesSubscribed = false
 
 export function bubbleRootForTest(): HTMLElement | null {
   return activeRoot
+}
+
+export function currentBubbleHost(): HTMLElement | null {
+  return activeHost
 }
 
 export function notifyVocabChanged(): void {
@@ -35,9 +43,18 @@ export async function openBubble(fallbackText: string): Promise<void> {
   const text = (currentSelectionText() || fallbackText).trim()
   if (text === '') return
 
+  // Voices load asynchronously; when they arrive, redraw so the speaker control and the
+  // voice picker reflect what is actually available.
+  if (!voicesSubscribed) {
+    voicesSubscribed = true
+    onVoicesChanged(() => rerenderOutcome?.())
+  }
+
   const anchor = selectionAnchorRect()
   const host = document.createElement('div')
   host.id = HOST_ID
+  hardenHost(host)
+  activeHost = host
   const shadow = host.attachShadow({ mode: 'closed' })
 
   const style = document.createElement('style')
@@ -62,10 +79,19 @@ export async function openBubble(fallbackText: string): Promise<void> {
     document.removeEventListener('pointerdown', onPointerDown, true)
     host.remove()
     activeRoot = null
+    activeHost = null
   }
 
   const bubble = new Bubble(root, text, anchor)
-  if (await hasConsent()) {
+  activeBubble = bubble
+
+  const consented = await hasConsent()
+  // Escape or an outside click during that storage round-trip already tore this bubble
+  // down; without this check we would translate for a bubble nobody can see, and nothing
+  // would be left to abort it.
+  if (activeRoot !== root) return
+
+  if (consented) {
     await bubble.start()
   } else {
     bubble.renderConsent()
@@ -74,15 +100,22 @@ export async function openBubble(fallbackText: string): Promise<void> {
 
 export function closeBubble(): void {
   stopSpeaking()
-  currentRun?.abort()
-  currentRun = null
+  // Abort the bubble being closed, never "whoever happens to be running": a per-instance
+  // controller keeps one bubble from cancelling another's translation.
+  activeBubble?.abort()
+  activeBubble = null
   teardown?.()
   teardown = null
   refreshSaved = null
+  rerenderOutcome = null
 }
 
 class Bubble {
   private runId = 0
+  private activeTarget: string | null = null
+  private controller: AbortController | null = null
+  private streamingBody: HTMLElement | null = null
+  private statusBody: HTMLElement | null = null
 
   constructor(
     private readonly root: HTMLElement,
@@ -91,6 +124,20 @@ class Bubble {
   ) {}
 
   private placedTop: number | null = null
+
+  abort(): void {
+    this.controller?.abort()
+    this.controller = null
+  }
+
+  /**
+   * Only the mounted bubble may render or touch the module-level UI state. A run started
+   * by a bubble that has since been closed or replaced can still resolve late — its
+   * per-instance runId guard says nothing about other instances.
+   */
+  private isActive(): boolean {
+    return activeRoot === this.root
+  }
 
   private place(): void {
     const height = this.root.offsetHeight
@@ -109,6 +156,7 @@ class Bubble {
   }
 
   renderConsent(): void {
+    if (!this.isActive()) return
     const message = el(
       'p',
       'message',
@@ -118,22 +166,32 @@ class Bubble {
     const agree = button('Agree and translate', () => {
       void grantConsent().then(() => this.start())
     })
+    this.streamingBody = null
+    this.statusBody = null
     this.root.replaceChildren(message, agree)
     this.place()
   }
 
   async start(): Promise<void> {
-    await this.run(await getTargetLanguage())
+    if (!this.isActive()) return
+    const target = await getTargetLanguage()
+    await this.run(target)
   }
 
   private async run(target: string): Promise<void> {
+    // A continuation from a torn-down bubble (consent granted, language switched, storage
+    // resolved) must not start work or touch shared state. Checked before the abort below,
+    // not after.
+    if (!this.isActive()) return
+
     const id = ++this.runId
+    this.activeTarget = target
 
     // Switching target language mid-stream must stop the previous translation, or its
     // remaining chunks would keep arriving behind the new one.
-    currentRun?.abort()
+    this.controller?.abort()
     const controller = new AbortController()
-    currentRun = controller
+    this.controller = controller
 
     this.renderStatus('Detecting language…')
     const outcome = await translateSelection(
@@ -150,31 +208,69 @@ class Bubble {
     if (id === this.runId) this.renderOutcome(outcome, target)
   }
 
+  /**
+   * Chunks arrive several times a second. Rebuilding the subtree each time would detach
+   * the footer's <select> — and detaching it dismisses its open dropdown without
+   * committing, making the picker impossible to actually use mid-stream. So build once
+   * and afterwards only write the text.
+   */
   private renderPartial(translation: string): void {
+    if (!this.isActive()) return
     refreshSaved = null
-    const header = el('div', 'head')
-    header.append(el('span', 'meta', 'Translating…'))
-    this.root.replaceChildren(header, el('p', 'translation', translation))
+    rerenderOutcome = null
+
+    this.statusBody = null
+    if (this.streamingBody === null) {
+      const header = el('div', 'head')
+      header.append(el('span', 'meta', 'Translating…'))
+      const body = el('p', 'translation', '')
+      this.streamingBody = body
+      this.root.replaceChildren(header, body, ...this.inProgressFooter())
+    }
+
+    this.streamingBody.textContent = translation
     this.place()
   }
 
   private renderStatus(text: string): void {
+    if (!this.isActive()) return
     refreshSaved = null
-    this.root.replaceChildren(el('p', 'message', text))
+    rerenderOutcome = null
+    this.streamingBody = null
+
+    // Download progress repeats too; same reason as renderPartial — build once, then write.
+    if (this.statusBody === null) {
+      const body = el('p', 'message', '')
+      this.statusBody = body
+      this.root.replaceChildren(body, ...this.inProgressFooter())
+    }
+
+    this.statusBody.textContent = text
     this.place()
+  }
+
+  // The language picker must stay reachable while a long translation streams, otherwise
+  // switching target mid-stream is impossible.
+  private inProgressFooter(): HTMLElement[] {
+    return this.activeTarget === null ? [] : [this.footer(this.activeTarget)]
   }
 
   private renderOutcome(outcome: TranslateOutcome, target: string): void {
     // An aborted run leaves whatever replaced it on screen.
-    if (outcome.kind === 'aborted') return
+    if (outcome.kind === 'aborted' || !this.isActive()) return
 
     refreshSaved = null
+    this.streamingBody = null
+    this.statusBody = null
+    rerenderOutcome = () => this.renderOutcome(outcome, target)
     const nodes: HTMLElement[] = []
 
     if (outcome.kind === 'result') {
+      // Speak and save exactly what was translated, not the part beyond the ceiling.
+      const source = this.translatedSource(outcome)
       const header = el('div', 'head')
       header.append(el('span', 'meta', `${languageLabel(outcome.sourceLanguage)} → ${languageLabel(target)}`))
-      const speaker = speakerButton(this.text, outcome.sourceLanguage)
+      const speaker = speakerButton(source, outcome.sourceLanguage)
       if (speaker) header.append(speaker)
       const picker = voicePicker(outcome.sourceLanguage)
       if (picker) header.append(picker)
@@ -202,8 +298,12 @@ class Bubble {
     this.place()
   }
 
+  private translatedSource(outcome: Extract<TranslateOutcome, { kind: 'result' }>): string {
+    return outcome.truncated ? normalizeSourceText(this.text.slice(0, MAX_CHARS)) : this.text
+  }
+
   private entryFor(outcome: Extract<TranslateOutcome, { kind: 'result' }>, target: string): VocabEntry {
-    const source = outcome.truncated ? normalizeSourceText(this.text.slice(0, MAX_CHARS)) : this.text
+    const source = this.translatedSource(outcome)
     return {
       sourceText: source,
       translation: outcome.translation,
@@ -243,7 +343,11 @@ class Bubble {
       select.appendChild(option)
     }
     select.addEventListener('change', () => {
-      void setTargetLanguage(select.value).then(() => this.run(select.value))
+      const chosen = select.value
+      // Adopt the choice now, not after the storage write: a chunk landing in that window
+      // would otherwise repaint the footer with the previous language.
+      this.activeTarget = chosen
+      void setTargetLanguage(chosen).then(() => this.run(chosen))
     })
     label.appendChild(select)
     footer.appendChild(label)

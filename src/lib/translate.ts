@@ -38,7 +38,7 @@ export async function translateSelection(
   onProgress({ kind: 'detecting' })
   let candidates: string[]
   try {
-    const detector = await LanguageDetector.create()
+    const detector = await LanguageDetector.create({ signal })
     try {
       const detected = await detector.detect(text)
       candidates = detected
@@ -69,6 +69,7 @@ export async function translateSelection(
     translator = await Translator.create({
       sourceLanguage,
       targetLanguage,
+      signal,
       monitor(monitor) {
         monitor.addEventListener('downloadprogress', (event) => {
           onProgress({ kind: 'downloading', progress: event.loaded })

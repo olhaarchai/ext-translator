@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('./bubble', () => ({
   openBubble: vi.fn(async () => {}),
+  currentBubbleHost: vi.fn(() => null),
 }))
 
 vi.mock('./settings', () => ({
@@ -18,7 +19,6 @@ import {
 } from './selection-icon'
 import { isSelectionIconEnabled } from './settings'
 
-const HOST_ID = 'ext-translator-selection-icon'
 
 function stubSelection(text: string, anchorNode: Node = document.body): void {
   vi.spyOn(window, 'getSelection').mockReturnValue({
@@ -49,25 +49,46 @@ installSelectionIcon()
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(isSelectionIconEnabled).mockResolvedValue(true)
+  vi.stubGlobal('chrome', {
+    runtime: { getURL: (path: string) => `chrome-extension://test-id/${path}` },
+  })
 })
 
 afterEach(() => {
   hideSelectionIcon()
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
 })
 
 describe('selection icon', () => {
   it('appears after selecting non-empty text', async () => {
     stubSelection('hello world')
     await selectAndSettle()
-    expect(document.getElementById(HOST_ID)).not.toBeNull()
+    expect(selectionIconHostForTest()).not.toBeNull()
   })
 
   it('does not appear for a whitespace-only selection', async () => {
     stubSelection('   ')
     document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
     await new Promise((resolve) => setTimeout(resolve, 5))
-    expect(document.getElementById(HOST_ID)).toBeNull()
+    expect(selectionIconHostForTest()).toBeNull()
+  })
+
+  it('does not resurrect the icon that was hidden while the setting was still loading', async () => {
+    let allow!: (enabled: boolean) => void
+    vi.mocked(isSelectionIconEnabled).mockReturnValueOnce(
+      new Promise((resolve) => { allow = resolve }),
+    )
+
+    stubSelection('hello world')
+    document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+    await new Promise((resolve) => setTimeout(resolve, 5))
+
+    hideSelectionIcon() // Escape / scroll / selection cleared
+    allow(true)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+
+    expect(selectionIconHostForTest()).toBeNull()
   })
 
   it('does not appear when the setting is off', async () => {
@@ -75,7 +96,7 @@ describe('selection icon', () => {
     stubSelection('hello world')
     document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
     await new Promise((resolve) => setTimeout(resolve, 5))
-    expect(document.getElementById(HOST_ID)).toBeNull()
+    expect(selectionIconHostForTest()).toBeNull()
   })
 
   it('anchors to the start of the selection, not to the end of its bounding box', async () => {
@@ -91,9 +112,26 @@ describe('selection icon', () => {
   it('never leaves two icons after repeated selections', async () => {
     stubSelection('first')
     await selectAndSettle()
+    const first = selectionIconHostForTest()
+
     stubSelection('second')
+    document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+    // Wait for the icon to be *replaced*, not merely present: it already is.
+    await vi.waitFor(() => {
+      if (selectionIconHostForTest() === first) throw new Error('icon not replaced yet')
+    })
+
+    expect(first?.isConnected).toBe(false)
+    expect(selectionIconHostForTest()?.isConnected).toBe(true)
+  })
+
+  it('shows the extension logo, not a text glyph', async () => {
+    stubSelection('hello world')
     await selectAndSettle()
-    expect(document.querySelectorAll(`#${HOST_ID}`)).toHaveLength(1)
+
+    const logo = iconButton()?.querySelector('img')
+    expect(logo?.getAttribute('src')).toBe('chrome-extension://test-id/icons/icon48.png')
+    expect(iconButton()?.textContent).toBe('')
   })
 
   it('opens the bubble with the selected text when clicked', async () => {
@@ -107,7 +145,7 @@ describe('selection icon', () => {
     button!.dispatchEvent(event)
 
     expect(openBubble).toHaveBeenCalledWith('hello world')
-    expect(document.getElementById(HOST_ID)).toBeNull()
+    expect(selectionIconHostForTest()).toBeNull()
   })
 
   it('hides once the selection is cleared', async () => {
@@ -116,17 +154,17 @@ describe('selection icon', () => {
 
     stubSelection('')
     document.dispatchEvent(new Event('selectionchange'))
-    expect(document.getElementById(HOST_ID)).toBeNull()
+    expect(selectionIconHostForTest()).toBeNull()
   })
 
   it('hides on Escape and on scroll', async () => {
     stubSelection('hello world')
     await selectAndSettle()
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
-    expect(document.getElementById(HOST_ID)).toBeNull()
+    expect(selectionIconHostForTest()).toBeNull()
 
     await selectAndSettle()
     window.dispatchEvent(new Event('scroll'))
-    expect(document.getElementById(HOST_ID)).toBeNull()
+    expect(selectionIconHostForTest()).toBeNull()
   })
 })

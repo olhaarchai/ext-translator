@@ -1,4 +1,4 @@
-import { voicesForLanguage } from './speech'
+import { defaultVoiceFor, voicesForLanguage } from './speech'
 import { preferredVoiceURI, setPreferredVoice } from './voice-prefs'
 
 export function voicePicker(lang: string): HTMLSelectElement | null {
@@ -9,12 +9,13 @@ export function voicePicker(lang: string): HTMLSelectElement | null {
   select.className = 'voice'
   select.title = 'Voice'
 
-  const current = preferredVoiceURI(lang)
+  // With nothing stored yet, show the voice that would actually be used, not the first one.
+  const selectedURI = preferredVoiceURI(lang) ?? defaultVoiceFor(lang)?.voiceURI
   for (const voice of voices) {
     const option = document.createElement('option')
     option.value = voice.voiceURI
     option.textContent = voice.name
-    if (voice.voiceURI === current) option.selected = true
+    if (voice.voiceURI === selectedURI) option.selected = true
     select.append(option)
   }
 

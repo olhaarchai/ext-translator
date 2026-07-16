@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('./speech', () => ({
   voicesForLanguage: vi.fn(),
+  defaultVoiceFor: vi.fn(() => null),
 }))
 
 vi.mock('./voice-prefs', () => ({
@@ -10,7 +11,7 @@ vi.mock('./voice-prefs', () => ({
   setPreferredVoice: vi.fn(async () => {}),
 }))
 
-import { voicesForLanguage } from './speech'
+import { defaultVoiceFor, voicesForLanguage } from './speech'
 import { voicePicker } from './voice-picker'
 import { preferredVoiceURI, setPreferredVoice } from './voice-prefs'
 
@@ -35,6 +36,15 @@ describe('voicePicker', () => {
 
     const select = voicePicker('en')!
     expect(select.options).toHaveLength(2)
+    expect(select.value).toBe('uri://samantha')
+  })
+
+  it('falls back to the best-scoring voice, not the first one, when nothing is stored', () => {
+    vi.mocked(voicesForLanguage).mockReturnValue(VOICES)
+    vi.mocked(preferredVoiceURI).mockReturnValue(undefined)
+    vi.mocked(defaultVoiceFor).mockReturnValue(VOICES[1]!)
+
+    const select = voicePicker('en')!
     expect(select.value).toBe('uri://samantha')
   })
 

@@ -8,7 +8,7 @@ Translation at the point of reading (spec 001) is useful in the moment, but the 
 are lost the instant the bubble closes. To learn a language the reader needs to keep the
 words they looked up. This feature turns a one-off translation into a saved entry the
 user owns, and gives them a place to see and manage everything they have collected — the
-foundation the flashcard trainer (spec 003) will draw on.
+foundation a future flashcard trainer will draw on.
 
 ## User-visible behavior
 
@@ -56,7 +56,9 @@ Viewing and managing, in the side panel:
 
 - Extends spec 001; the translation bubble gains the save/saved control.
 - Requested permissions become exactly: `contextMenus`, `activeTab`, `scripting`,
-  `storage`, `sidePanel`. No host permissions; no `unlimitedStorage`.
+  `storage`, `sidePanel`. No host permissions; no `unlimitedStorage`. (The "no host
+  permissions" clause is superseded by spec 004, which runs a content script on all
+  http(s) pages.)
 - The vocabulary lives in local extension storage only; the extension performs no network
   request for this feature.
 - A vocabulary entry records: the original text, the translation, the source language,
