@@ -1,7 +1,10 @@
 import { languageLabel } from './lib/languages'
+import { onVoicesChanged } from './lib/speech'
+import { speakerButton } from './lib/speaker-button'
 import { vocabList, vocabRemove } from './lib/vocab-client'
 import { filterEntries } from './lib/vocab-filter'
 import { keyOf, type VocabEntry } from './lib/vocab-types'
+import { loadVoicePrefs } from './lib/voice-prefs'
 
 const listEl = requireEl('list')
 const countEl = requireEl('count')
@@ -42,9 +45,13 @@ function entryRow(entry: VocabEntry): HTMLElement {
   row.append(text('div', 'entry-translation', entry.translation))
 
   const foot = div('entry-foot')
-  foot.append(
+  const left = div('entry-left')
+  const speaker = speakerButton(entry.sourceText, entry.sourceLanguage)
+  if (speaker) left.append(speaker)
+  left.append(
     text('span', 'entry-langs', `${languageLabel(entry.sourceLanguage)} → ${languageLabel(entry.targetLanguage)}`),
   )
+  foot.append(left)
 
   const del = document.createElement('button')
   del.className = 'delete'
@@ -79,4 +86,7 @@ chrome.runtime.onMessage.addListener((message: { type?: string }) => {
   if (message?.type === 'vocab-changed') void load()
 })
 
+onVoicesChanged(render)
+
+void loadVoicePrefs()
 void load()

@@ -79,9 +79,33 @@
         gap: 8px;
         margin-top: 6px;
       }
+      .entry-left {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
       .entry-langs {
         color: var(--muted);
         font-size: 12px;
+      }
+      .speak {
+        font: inherit;
+        font-size: 13px;
+        line-height: 1;
+        padding: 2px 7px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+      }
+      .speak:hover:not(:disabled) {
+        background: var(--border);
+      }
+      .speak:disabled {
+        opacity: 0.4;
+        cursor: default;
       }
       .delete {
         font: inherit;
