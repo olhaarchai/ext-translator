@@ -44,8 +44,17 @@ export function selectionIconButtonForTest(): HTMLButtonElement | null {
 }
 
 function onMouseUp(event: MouseEvent): void {
-  if (host && event.composedPath().includes(host)) return
+  // A selection finished inside our own UI must not raise the icon. The anchor-based guard
+  // in maybeShowIcon cannot see it: a closed shadow tree reports the selected text but hides
+  // its anchor node, so the walk has nothing to follow. The event path still lists the host,
+  // even for a closed tree, so decide from where the release happened.
+  const path = event.composedPath()
+  if (extensionHosts().some((el) => path.includes(el))) return
   setTimeout(() => void maybeShowIcon(), 0)
+}
+
+function extensionHosts(): HTMLElement[] {
+  return [host, currentBubbleHost()].filter((el): el is HTMLElement => el !== null)
 }
 
 function onSelectionChange(): void {
@@ -136,7 +145,7 @@ function currentText(): string {
 // Compare element identity rather than ids: an id is page-controlled, so a page could
 // otherwise label its own content as ours and suppress the icon over it.
 function insideExtensionUI(selection: Selection): boolean {
-  const ours = [host, currentBubbleHost()].filter((el): el is HTMLElement => el !== null)
+  const ours = extensionHosts()
   if (ours.length === 0) return false
 
   let node: Node | null = selection.anchorNode

@@ -4,6 +4,7 @@ import { languageLabel } from './lib/languages'
 import { isSelectionIconEnabled, setSelectionIconEnabled } from './lib/settings'
 import { onVoicesChanged } from './lib/speech'
 import { speakerButton } from './lib/speaker-button'
+import { spokenLanguage } from './lib/spoken-language'
 import { vocabList, vocabRemove } from './lib/vocab-client'
 import { filterEntries } from './lib/vocab-filter'
 import { keyOf, type VocabEntry } from './lib/vocab-types'
@@ -72,10 +73,10 @@ function entryRow(entry: VocabEntry): HTMLElement {
 
   const foot = div('entry-foot')
   const left = div('entry-left')
-  const speaker = speakerButton(entry.sourceText, entry.sourceLanguage)
-  if (speaker) left.append(speaker)
   left.append(
-    text('span', 'entry-langs', `${languageLabel(entry.sourceLanguage)} → ${languageLabel(entry.targetLanguage)}`),
+    spokenLanguage(entry.sourceText, entry.sourceLanguage, 'entry-langs'),
+    text('span', 'entry-langs', '→'),
+    spokenLanguage(entry.translation, entry.targetLanguage, 'entry-langs'),
   )
   foot.append(left)
 

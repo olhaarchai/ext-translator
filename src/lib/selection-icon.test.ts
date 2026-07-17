@@ -10,7 +10,7 @@ vi.mock('./settings', () => ({
   isSelectionIconEnabled: vi.fn(async () => true),
 }))
 
-import { openBubble } from './bubble'
+import { currentBubbleHost, openBubble } from './bubble'
 import {
   hideSelectionIcon,
   installSelectionIcon,
@@ -20,7 +20,7 @@ import {
 import { isSelectionIconEnabled } from './settings'
 
 
-function stubSelection(text: string, anchorNode: Node = document.body): void {
+function stubSelection(text: string, anchorNode: Node | null = document.body): void {
   vi.spyOn(window, 'getSelection').mockReturnValue({
     toString: () => text,
     rangeCount: text === '' ? 0 : 1,
@@ -65,6 +65,26 @@ describe('selection icon', () => {
     stubSelection('hello world')
     await selectAndSettle()
     expect(selectionIconHostForTest()).not.toBeNull()
+  })
+
+  it('does not appear for a selection made inside our own bubble', async () => {
+    // Selecting text inside the bubble raised the icon over it. A closed shadow tree reports
+    // the selected text but reports no anchor node, so the anchor walk cannot see the
+    // selection is ours; the release event's path still names the host.
+    const bubbleHost = document.createElement('div')
+    document.body.appendChild(bubbleHost)
+    vi.mocked(currentBubbleHost).mockReturnValue(bubbleHost)
+    stubSelection('kelime', null)
+
+    const inner = document.createElement('span')
+    bubbleHost.appendChild(inner)
+    inner.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, composed: true }))
+    await new Promise((resolve) => setTimeout(resolve, 5))
+
+    expect(selectionIconHostForTest()).toBeNull()
+
+    vi.mocked(currentBubbleHost).mockReturnValue(null)
+    bubbleHost.remove()
   })
 
   it('does not appear for a whitespace-only selection', async () => {

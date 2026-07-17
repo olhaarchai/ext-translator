@@ -31,6 +31,17 @@ vi.mock('./speech', () => ({
   voicesForLanguage: () => [],
 }))
 
+// A stand-in that records which language it was asked for, so a test can assert the picker
+// is wired to both languages without depending on the machine's installed voices.
+vi.mock('./voice-picker', () => ({
+  voiceControl: (lang: string) => {
+    const marker = document.createElement('span')
+    marker.className = 'voice'
+    marker.dataset.lang = lang
+    return marker
+  },
+}))
+
 import {
   bubbleRootForTest,
   closeBubble,
@@ -323,5 +334,73 @@ describe('bubble pronunciation', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     expect(stopSpeaking).toHaveBeenCalled()
     expect(currentBubbleHost()).toBeNull()
+  })
+})
+
+describe('speaking the translation', () => {
+  function speakers(): HTMLButtonElement[] {
+    return [...root().querySelectorAll('.head .speak')] as HTMLButtonElement[]
+  }
+
+  it('offers a control for the original and one for the translation', async () => {
+    await openBubble('hello world')
+    expect(speakers()).toHaveLength(2)
+  })
+
+  it('reads each language with its own control, never the other language\'s text', async () => {
+    await openBubble('hello world')
+    const [source, target] = speakers()
+
+    trustedClick(source!)
+    expect(speakToggle).toHaveBeenLastCalledWith('hello world', 'en')
+
+    trustedClick(target!)
+    expect(speakToggle).toHaveBeenLastCalledWith('Привіт', 'uk')
+  })
+
+  it('shows each language beside the control that speaks it', async () => {
+    await openBubble('hello world')
+    const labels = [...root().querySelectorAll('.head .lang')].map((group) =>
+      group.querySelector('.entry-langs, .meta')?.textContent ?? group.textContent,
+    )
+    expect(labels).toEqual(['English', 'Ukrainian'])
+  })
+
+  it('offers a voice picker for the target language, not only the source', async () => {
+    await openBubble('hello world')
+    const langs = [...root().querySelectorAll('.head .voice')].map((v) => (v as HTMLElement).dataset.lang)
+    expect(langs).toEqual(['en', 'uk'])
+  })
+
+  it('offers nothing to speak while the translation is still streaming', async () => {
+    // Half a translation must never be read aloud, so the control cannot exist yet.
+    const midStream: number[] = []
+    vi.mocked(translateSelection).mockImplementation(async (_text, _target, _onProgress, onPartial) => {
+      onPartial?.('При')
+      midStream.push(speakers().length)
+      onPartial?.('Привіт')
+      midStream.push(speakers().length)
+      return RESULT
+    })
+
+    await openBubble('hello world')
+
+    expect(midStream).toEqual([0, 0])
+    expect(speakers()).toHaveLength(2)
+  })
+
+  it('offers nothing to speak when there is no translation to speak', async () => {
+    vi.mocked(translateSelection).mockResolvedValue({ kind: 'same-language', language: 'uk' })
+    await openBubble('hello world')
+    expect(speakers()).toHaveLength(0)
+
+    closeBubble()
+    vi.mocked(translateSelection).mockResolvedValue({
+      kind: 'error',
+      error: 'translation-failed',
+      sourceLanguage: 'en',
+    })
+    await openBubble('hello world')
+    expect(speakers()).toHaveLength(0)
   })
 })

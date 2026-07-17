@@ -9,9 +9,9 @@ import {
   type TranslateOutcome,
   type TranslateProgress,
 } from './translate'
-import { speakerButton } from './speaker-button'
+import { spokenLanguage } from './spoken-language'
 import { onVoicesChanged, stopSpeaking } from './speech'
-import { voicePicker } from './voice-picker'
+import { voiceControl } from './voice-picker'
 import { vocabAdd, vocabHas, vocabRemove } from './vocab-client'
 import { keyOf, normalizeSourceText, type VocabEntry } from './vocab-types'
 
@@ -269,11 +269,11 @@ class Bubble {
       // Speak and save exactly what was translated, not the part beyond the ceiling.
       const source = this.translatedSource(outcome)
       const header = el('div', 'head')
-      header.append(el('span', 'meta', `${languageLabel(outcome.sourceLanguage)} → ${languageLabel(target)}`))
-      const speaker = speakerButton(source, outcome.sourceLanguage)
-      if (speaker) header.append(speaker)
-      const picker = voicePicker(outcome.sourceLanguage)
-      if (picker) header.append(picker)
+      header.append(
+        spokenLanguageWithPicker(source, outcome.sourceLanguage),
+        el('span', 'meta', '→'),
+        spokenLanguageWithPicker(outcome.translation, target),
+      )
       nodes.push(header)
       nodes.push(el('p', 'translation', outcome.translation))
       if (outcome.truncated) {
@@ -353,6 +353,13 @@ class Bubble {
     footer.appendChild(label)
     return footer
   }
+}
+
+function spokenLanguageWithPicker(text: string, lang: string): HTMLElement {
+  const group = spokenLanguage(text, lang, 'meta')
+  const control = voiceControl(lang)
+  if (control !== null) group.append(control)
+  return group
 }
 
 function progressText(progress: TranslateProgress): string {
@@ -455,6 +462,9 @@ const BUBBLE_CSS = `
   display: flex;
   align-items: center;
   gap: 8px;
+  /* Two languages, each with a control and possibly a voice picker, outgrow one line in a
+     narrow bubble. */
+  flex-wrap: wrap;
   position: sticky;
   /* Pull up over the bubble's own padding: it scrolls too, so text would otherwise
      show through the gap above a header pinned at top: 0. */
@@ -467,11 +477,59 @@ const BUBBLE_CSS = `
 .head .meta {
   margin: 0;
 }
+.lang {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
 .voice {
-  font: inherit;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: currentColor;
+  opacity: 0.7;
+  cursor: pointer;
+}
+.voice:hover {
+  background: rgba(0, 0, 0, 0.06);
+  opacity: 1;
+}
+.voice:focus-within {
+  outline: 2px solid rgba(0, 0, 0, 0.35);
+  opacity: 1;
+}
+.voice-caret {
   font-size: 12px;
-  max-width: 130px;
-  margin-left: auto;
+  line-height: 1;
+  pointer-events: none;
+}
+.voice-none {
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 6px;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  opacity: 0.55;
+  white-space: nowrap;
+  cursor: help;
+}
+/* A real, focusable select laid invisibly over the caret: the native dropdown and its
+   keyboard handling stay, while only the caret shows. */
+.voice-select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  cursor: pointer;
+  font: inherit;
 }
 .speak {
   font: inherit;
@@ -528,6 +586,12 @@ select {
   }
   .speak {
     border-color: rgba(255, 255, 255, 0.25);
+  }
+  .voice:hover {
+    background: rgba(255, 255, 255, 0.12);
+  }
+  .voice:focus-within {
+    outline-color: rgba(255, 255, 255, 0.45);
   }
 }
 `

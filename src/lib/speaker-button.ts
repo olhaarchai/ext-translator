@@ -1,3 +1,4 @@
+import { languageLabel } from './languages'
 import { hasVoiceFor, speakToggle, speechAvailable } from './speech'
 
 export function speakerButton(text: string, lang: string): HTMLButtonElement | null {
@@ -10,7 +11,13 @@ export function speakerButton(text: string, lang: string): HTMLButtonElement | n
 
   const enabled = hasVoiceFor(lang)
   button.disabled = !enabled
-  const label = enabled ? 'Listen' : 'No voice available for this language'
+  // Two of these now sit side by side, so the label names its language. When there is no
+  // voice it also says what would fix it: most systems ship voices for the interface
+  // language and little else, and a bare "not available" reads as a broken extension
+  // rather than a missing download the reader can go and get.
+  const label = enabled
+    ? `Listen in ${languageLabel(lang)}`
+    : `No ${languageLabel(lang)} voice is installed. Add one in your system's speech settings to listen.`
   button.title = label
   button.setAttribute('aria-label', label)
 

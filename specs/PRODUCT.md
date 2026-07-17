@@ -14,8 +14,9 @@ text to a cloud service or stop at translation without helping you retain vocabu
 
 Translates text the user selects on a webpage — from an icon at the selection or from the
 context menu — fully on-device via the browser's built-in translation model. Long passages
-are translated in full and appear as they are produced. The extension reads the original
-aloud on request and lets the reader save any translation into a personal vocabulary
+are translated in full and appear as they are produced. The extension reads either the
+original or the translation aloud on request — so a reader learning the target language can
+hear how it sounds — and lets the reader save any translation into a personal vocabulary
 browsed from a side panel. Nothing leaves the browser.
 
 ## Capabilities
@@ -24,7 +25,8 @@ browsed from a side panel. Nothing leaves the browser.
 | -------------------------------------------- | ---- | -------- |
 | Select-to-translate with on-device model     | 001  | implemented |
 | Personal vocabulary (save translations)      | 002  | implemented |
-| Pronunciation (text-to-speech)               | 003  | implemented |
+| Pronunciation of the original (text-to-speech) | 003  | implemented |
+| Pronunciation of the translation             | 007  | implemented |
 | Selection icon trigger                       | 004  | implemented |
 | Long text translation                        | 005  | implemented |
 | Flashcard training (multiple-choice)         | 006  | implemented |

@@ -1,7 +1,16 @@
 import { preferredVoiceURI } from './voice-prefs'
 
+/**
+ * The model names Norwegian 'no', while the voices a system installs are 'nb' (Bokmål) or
+ * 'nn' (Nynorsk) — the modern codes for the written forms under the 'no' macrolanguage.
+ * Compared naively they never meet, so a Norwegian translation would report no voice while
+ * one sits installed.
+ */
+const SAME_LANGUAGE: Record<string, string> = { nb: 'no', nn: 'no' }
+
 function baseLang(lang: string): string {
-  return lang.toLowerCase().split('-')[0] ?? ''
+  const base = lang.toLowerCase().split('-')[0] ?? ''
+  return SAME_LANGUAGE[base] ?? base
 }
 
 export function speechAvailable(): boolean {

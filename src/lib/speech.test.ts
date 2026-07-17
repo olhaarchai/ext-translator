@@ -76,6 +76,18 @@ describe('voicesForLanguage', () => {
     expect(voicesForLanguage('en-GB')).toHaveLength(1)
     expect(voicesForLanguage('uk')).toHaveLength(0)
   })
+
+  it('finds a Norwegian voice, which systems name by its written form', () => {
+    // The model asks for 'no'; macOS installs 'nb-NO'. Compared as-is they never meet and
+    // Norwegian looks voiceless while a voice is installed.
+    stubSpeech([{ lang: 'nb-NO', name: 'Nora', voiceURI: 'uri://nora', localService: true }])
+    expect(voicesForLanguage('no').map((v) => v.voiceURI)).toEqual(['uri://nora'])
+  })
+
+  it('does not confuse a language whose code merely starts alike', () => {
+    stubSpeech([{ lang: 'nl-NL', name: 'Xander', localService: true }])
+    expect(voicesForLanguage('no')).toHaveLength(0)
+  })
 })
 
 describe('hasVoiceFor', () => {
