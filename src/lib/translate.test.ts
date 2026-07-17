@@ -170,21 +170,23 @@ describe('translateSelection', () => {
     expect(translateStreaming).toHaveBeenCalledWith(long)
   })
 
-  it('assembles incremental chunks (each chunk is only the new piece)', async () => {
+  it('assembles chunks, each carrying only the newly produced text', async () => {
     stubLanguageDetector([{ detectedLanguage: 'en', confidence: 0.9 }])
     stubTranslator({ chunks: () => ['При', 'віт ', 'світ'] })
     const outcome = await translateSelection('hello world', 'uk', () => {})
     expect(outcome).toMatchObject({ kind: 'result', translation: 'Привіт світ' })
   })
 
-  it('assembles cumulative chunks (each chunk repeats everything so far)', async () => {
+  it('keeps a chunk that happens to begin with everything received so far', async () => {
+    // Nothing marks such a chunk as special — it is new text like any other. Treating it
+    // as a restatement of the whole translation silently swallowed the leading character.
     stubLanguageDetector([{ detectedLanguage: 'en', confidence: 0.9 }])
-    stubTranslator({ chunks: () => ['При', 'Привіт ', 'Привіт світ'] })
-    const outcome = await translateSelection('hello world', 'uk', () => {})
-    expect(outcome).toMatchObject({ kind: 'result', translation: 'Привіт світ' })
+    stubTranslator({ chunks: () => ['О', 'Один'] })
+    const outcome = await translateSelection('O One', 'uk', () => {})
+    expect(outcome).toMatchObject({ kind: 'result', translation: 'ООдин' })
   })
 
-  it('does not mistake a repeated incremental chunk for a cumulative one', async () => {
+  it('keeps a chunk repeated verbatim', async () => {
     stubLanguageDetector([{ detectedLanguage: 'en', confidence: 0.9 }])
     stubTranslator({ chunks: () => ['a', 'a'] })
     const outcome = await translateSelection('aa', 'uk', () => {})

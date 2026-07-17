@@ -1,12 +1,15 @@
 /**
- * Text that is clamped to a couple of lines and expands in place when activated.
+ * Text clamped to two lines that expands in place.
  *
- * Two invariants:
- * - The element always carries the full text; clamping is visual only, so anything that
- *   compares or reads it never sees the shortened form.
- * - It only swallows a click when there is genuinely something to expand. These live
- *   inside option buttons, where swallowing a click would make the option unanswerable.
+ * The element always carries the full text; clamping is visual only, so anything that
+ * compares or reads it never sees the shortened form.
+ *
+ * The expand control is handed back separately rather than nested inside the text. Inside
+ * an option <button> a nested control is invalid HTML, stops firing the moment the button
+ * is disabled, and — because the clamped text fills the button — leaves nothing but the
+ * padding to click. Callers place the hint where nothing else competes for the click.
  */
+
 /**
  * Text this short cannot fill two lines in any realistic panel width, so it is settled up
  * front. Measuring would say the same, but measurement needs a laid-out frame — and a side
@@ -15,50 +18,53 @@
  */
 const NEVER_CLAMPED_CHARS = 60
 
-export function expandableText(tag: string, className: string, content: string): HTMLElement {
-  const node = document.createElement(tag)
-  node.className = `${className} clamped expandable`
-  node.textContent = content
-  node.title = 'Click to expand'
+export interface Clamped {
+  text: HTMLElement
+  /** null when the text is short enough that it can never need expanding. */
+  hint: HTMLElement | null
+  /** Expands or collapses. A no-op once the text has proved it fits. */
+  toggle: () => void
+}
+
+export function clampedText(tag: string, className: string, content: string): Clamped {
+  const text = document.createElement(tag)
+  text.className = className
+  text.textContent = content
 
   if (content.length <= NEVER_CLAMPED_CHARS) {
-    node.classList.remove('clamped', 'expandable')
-    node.removeAttribute('title')
-    const plain = document.createElement('div')
-    plain.append(node)
-    return plain
+    return { text, hint: null, toggle: () => {} }
   }
 
-  const hint = document.createElement('span')
+  text.classList.add('clamped')
+
+  const hint = document.createElement('button')
+  hint.type = 'button'
   hint.className = 'more clamped-hint'
   hint.textContent = 'Show more'
 
-  const wrap = document.createElement('div')
-  wrap.append(node, hint)
+  let settled = false
+  const overflows = () => text.scrollHeight > text.clientHeight + 1
 
-  const overflows = () => node.scrollHeight > node.clientHeight + 1
-
-  const settleAsPlainText = () => {
-    node.classList.remove('clamped', 'expandable')
-    node.removeAttribute('title')
+  const settle = () => {
+    settled = true
+    text.classList.remove('clamped', 'expandable')
+    text.removeAttribute('title')
     hint.remove()
   }
 
-  const toggle = (event: Event) => {
-    // Measured now, not at build time: layout is only reliable once it is on screen, and a
-    // panel rendered while hidden may never get an animation frame.
-    if (node.classList.contains('clamped') && !overflows()) {
-      settleAsPlainText()
-      return // ordinary text — let the click reach the option
+  const toggle = () => {
+    if (settled) return
+    // Measured now, not at build time: layout is only reliable once the element is on
+    // screen, and a panel rendered while hidden may never get an animation frame.
+    if (text.classList.contains('clamped') && !overflows()) {
+      settle()
+      return
     }
-
-    event.stopPropagation()
-    const clamped = node.classList.toggle('clamped')
+    const clamped = text.classList.toggle('clamped')
     hint.textContent = clamped ? 'Show more' : 'Show less'
-    node.title = clamped ? 'Click to expand' : 'Click to collapse'
+    text.title = clamped ? 'Click to expand' : 'Click to collapse'
   }
 
-  node.addEventListener('click', toggle)
   hint.addEventListener('click', toggle)
 
   // Measure once the element is genuinely rendered. requestAnimationFrame was wrong in both
@@ -69,9 +75,28 @@ export function expandableText(tag: string, className: string, content: string):
     const observer = new IntersectionObserver((records, self) => {
       if (!records.some((record) => record.isIntersecting)) return
       self.disconnect()
-      if (!overflows()) settleAsPlainText()
+      if (!overflows()) settle()
     })
-    observer.observe(node)
+    observer.observe(text)
+  }
+
+  return { text, hint, toggle }
+}
+
+/**
+ * Self-contained clamped text for places where nothing else owns the click, so the text
+ * itself expands as well as the hint.
+ */
+export function expandableText(tag: string, className: string, content: string): HTMLElement {
+  const { text, hint, toggle } = clampedText(tag, className, content)
+  const wrap = document.createElement('div')
+  wrap.append(text)
+
+  if (hint !== null) {
+    text.classList.add('expandable')
+    text.title = 'Click to expand'
+    text.addEventListener('click', toggle)
+    wrap.append(hint)
   }
 
   return wrap
