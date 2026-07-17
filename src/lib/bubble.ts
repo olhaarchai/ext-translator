@@ -1,6 +1,6 @@
 import { BUBBLE_WIDTH, bubblePosition, clampTop, type AnchorRect } from './bubble-position'
 import { hardenHost, randomHostId } from './extension-host'
-import { SUPPORTED_TARGETS, languageLabel } from './languages'
+import { languageLabel, targetsByLabel } from './languages'
 import { getTargetLanguage, grantConsent, hasConsent, setTargetLanguage } from './settings'
 import {
   MAX_CHARS,
@@ -335,7 +335,7 @@ class Bubble {
     const footer = el('div', 'footer')
     const label = el('label', 'meta', 'Translate to ')
     const select = document.createElement('select')
-    for (const code of SUPPORTED_TARGETS) {
+    for (const code of targetsByLabel()) {
       const option = document.createElement('option')
       option.value = code
       option.textContent = languageLabel(code)
