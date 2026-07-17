@@ -134,6 +134,108 @@
         font-size: 12px;
         cursor: pointer;
       }
+      .primary {
+        width: 100%;
+        font: inherit;
+        font-weight: 600;
+        padding: 8px 12px;
+        margin-bottom: 10px;
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        background: var(--card);
+        color: inherit;
+        cursor: pointer;
+      }
+      .primary:hover:not(:disabled) {
+        background: var(--border);
+      }
+      .primary:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+      .hidden {
+        display: none;
+      }
+      .train-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+      .progress {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .prompt {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        padding: 14px 12px;
+        margin-bottom: 12px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--card);
+      }
+      .prompt-text {
+        font-size: 17px;
+        font-weight: 600;
+        overflow-wrap: anywhere;
+      }
+      /* Long text is clamped; activating it expands in place. */
+      .clamped {
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      .expandable {
+        cursor: pointer;
+      }
+      .more {
+        display: block;
+        margin-top: 3px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .option {
+        display: block;
+        width: 100%;
+        text-align: left;
+        font: inherit;
+        padding: 9px 11px;
+        margin-bottom: 7px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+        overflow-wrap: anywhere;
+      }
+      .option:hover:not(:disabled) {
+        background: var(--card);
+      }
+      .option:disabled {
+        cursor: default;
+      }
+      .option.correct {
+        border-color: #2e7d32;
+        background: rgba(46, 125, 50, 0.16);
+      }
+      .option.wrong {
+        border-color: #c62828;
+        background: rgba(198, 40, 40, 0.16);
+      }
+      .verdict {
+        margin: 10px 0 4px;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .score {
+        font-size: 15px;
+        text-align: center;
+        padding: 24px 4px 14px;
+      }
     </style>
   </head>
   <body>
@@ -141,12 +243,23 @@
       <h1>Vocabulary</h1>
       <span id="count"></span>
     </header>
-    <label class="setting">
-      <input id="icon-toggle" type="checkbox" />
-      Show icon when I select text
-    </label>
-    <input id="filter" type="search" placeholder="Filter…" autocomplete="off" />
-    <div id="list"></div>
+    <div id="vocab-view">
+      <label class="setting">
+        <input id="icon-toggle" type="checkbox" />
+        Show icon when I select text
+      </label>
+      <button id="train-start" class="primary" type="button">Train</button>
+      <input id="filter" type="search" placeholder="Filter…" autocomplete="off" />
+      <div id="list"></div>
+    </div>
+
+    <div id="train-view" class="hidden">
+      <div class="train-head">
+        <span id="train-progress" class="progress"></span>
+        <button id="train-exit" class="delete" type="button">Exit</button>
+      </div>
+      <div id="train-body"></div>
+    </div>
     <script src="sidepanel.js"></script>
   </body>
 </html>
