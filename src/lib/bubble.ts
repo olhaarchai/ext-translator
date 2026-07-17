@@ -9,7 +9,7 @@ import {
   type TranslateOutcome,
   type TranslateProgress,
 } from './translate'
-import { speakerButton } from './speaker-button'
+import { spokenLanguage } from './spoken-language'
 import { onVoicesChanged, stopSpeaking } from './speech'
 import { voicePicker } from './voice-picker'
 import { vocabAdd, vocabHas, vocabRemove } from './vocab-client'
@@ -269,11 +269,11 @@ class Bubble {
       // Speak and save exactly what was translated, not the part beyond the ceiling.
       const source = this.translatedSource(outcome)
       const header = el('div', 'head')
-      header.append(el('span', 'meta', `${languageLabel(outcome.sourceLanguage)} → ${languageLabel(target)}`))
-      const speaker = speakerButton(source, outcome.sourceLanguage)
-      if (speaker) header.append(speaker)
-      const picker = voicePicker(outcome.sourceLanguage)
-      if (picker) header.append(picker)
+      header.append(
+        spokenLanguageWithPicker(source, outcome.sourceLanguage),
+        el('span', 'meta', '→'),
+        spokenLanguageWithPicker(outcome.translation, target),
+      )
       nodes.push(header)
       nodes.push(el('p', 'translation', outcome.translation))
       if (outcome.truncated) {
@@ -353,6 +353,13 @@ class Bubble {
     footer.appendChild(label)
     return footer
   }
+}
+
+function spokenLanguageWithPicker(text: string, lang: string): HTMLElement {
+  const group = spokenLanguage(text, lang, 'meta')
+  const picker = voicePicker(lang)
+  if (picker !== null) group.append(picker)
+  return group
 }
 
 function progressText(progress: TranslateProgress): string {
@@ -455,6 +462,9 @@ const BUBBLE_CSS = `
   display: flex;
   align-items: center;
   gap: 8px;
+  /* Two languages, each with a control and possibly a voice picker, outgrow one line in a
+     narrow bubble. */
+  flex-wrap: wrap;
   position: sticky;
   /* Pull up over the bubble's own padding: it scrolls too, so text would otherwise
      show through the gap above a header pinned at top: 0. */
@@ -467,11 +477,15 @@ const BUBBLE_CSS = `
 .head .meta {
   margin: 0;
 }
+.lang {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
 .voice {
   font: inherit;
   font-size: 12px;
   max-width: 130px;
-  margin-left: auto;
 }
 .speak {
   font: inherit;
