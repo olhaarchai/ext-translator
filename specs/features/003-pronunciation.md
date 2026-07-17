@@ -1,6 +1,7 @@
 # 003 — Pronunciation (text-to-speech)
 
-Status: implemented (2026-07-16)
+Status: implemented (2026-07-16); scope extended by [007](007-speak-translation.md), which
+adds speaking the translation and drops this feature's original-text-only limit.
 
 ## Why
 
