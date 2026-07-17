@@ -30,6 +30,11 @@ Viewing and managing, in the side panel:
   side panel beside the page.
 - The panel lists every saved entry, newest first. Each row shows the original text, its
   translation, and the language pair.
+- A saved sentence can be long, so a row's original and translation are each **shortened to
+  fit** when they would not: they are cut with a visible indication that they continue.
+  Activating a shortened text expands it in place to its full length; activating it again
+  collapses it. Each text expands on its own, so one long entry never pushes the rest of
+  the list off screen.
 - The panel shows how many entries are saved, and an explicit empty state when there are
   none yet.
 - The user can delete any entry from the panel; it disappears from the list at once.
@@ -88,3 +93,7 @@ Viewing and managing, in the side panel:
    refresh, and deleting an entry keeps the bubble's shown state consistent.
 10. The same original text saved under two different target languages produces two
     entries; the saved vocabulary is unchanged after a browser restart.
+11. A row whose original or translation is too long to fit is shown shortened with an
+    indication that it continues; activating that text expands it fully and activating it
+    again collapses it, without affecting the other rows. Filtering still matches against
+    the full text, not the shortened form.

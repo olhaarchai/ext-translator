@@ -25,7 +25,7 @@ browsed from a side panel. Nothing leaves the browser.
 | Pronunciation (text-to-speech)               | 003  | implemented |
 | Selection icon trigger                       | 004  | implemented |
 | Long text translation                        | 005  | implemented |
-| Flashcard training (multiple-choice)         | 006  | planned  |
+| Flashcard training (multiple-choice)         | 006  | implemented |
 
 ## Release strategy
 
