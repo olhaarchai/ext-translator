@@ -17,7 +17,8 @@ context menu — fully on-device via the browser's built-in translation model. L
 are translated in full and appear as they are produced. The extension reads either the
 original or the translation aloud on request — so a reader learning the target language can
 hear how it sounds — and lets the reader save any translation into a personal vocabulary
-browsed from a side panel. Nothing leaves the browser.
+browsed from a side panel, opened from the toolbar icon or the right-click menu. Nothing
+leaves the browser.
 
 ## Capabilities
 

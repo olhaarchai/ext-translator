@@ -1,13 +1,43 @@
 import { languageLabel } from './languages'
 import { hasVoiceFor, speakToggle, speechAvailable } from './speech'
 
+const SVG_NS = 'http://www.w3.org/2000/svg'
+
+// An inline speaker glyph rather than the 🔊 emoji: emoji render inconsistently across
+// platforms — on some they show as a muted/struck speaker — while this inherits the text
+// colour and draws identically everywhere.
+function speakerIcon(): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, 'svg')
+  svg.setAttribute('viewBox', '0 0 24 24')
+  svg.setAttribute('width', '15')
+  svg.setAttribute('height', '15')
+  svg.setAttribute('aria-hidden', 'true')
+  svg.setAttribute('focusable', 'false')
+
+  const cone = document.createElementNS(SVG_NS, 'path')
+  cone.setAttribute('d', 'M4 9v6h4l5 4V5L8 9H4z')
+  cone.setAttribute('fill', 'currentColor')
+  svg.append(cone)
+
+  for (const d of ['M16 8.8a3.6 3.6 0 0 1 0 6.4', 'M18.7 6.2a7 7 0 0 1 0 11.6']) {
+    const wave = document.createElementNS(SVG_NS, 'path')
+    wave.setAttribute('d', d)
+    wave.setAttribute('fill', 'none')
+    wave.setAttribute('stroke', 'currentColor')
+    wave.setAttribute('stroke-width', '2')
+    wave.setAttribute('stroke-linecap', 'round')
+    svg.append(wave)
+  }
+  return svg
+}
+
 export function speakerButton(text: string, lang: string): HTMLButtonElement | null {
   if (!speechAvailable()) return null
 
   const button = document.createElement('button')
   button.className = 'speak'
   button.type = 'button'
-  button.textContent = '🔊'
+  button.append(speakerIcon())
 
   const enabled = hasVoiceFor(lang)
   button.disabled = !enabled

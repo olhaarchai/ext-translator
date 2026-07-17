@@ -95,15 +95,18 @@
         gap: 5px;
       }
       .speak {
-        font: inherit;
-        font-size: 13px;
-        line-height: 1;
-        padding: 2px 7px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 3px 6px;
         border: 1px solid var(--border);
         border-radius: 6px;
         background: transparent;
         color: inherit;
         cursor: pointer;
+      }
+      .speak svg {
+        display: block;
       }
       .speak:hover:not(:disabled) {
         background: var(--border);
