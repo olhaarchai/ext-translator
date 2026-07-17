@@ -532,14 +532,18 @@ const BUBBLE_CSS = `
   font: inherit;
 }
 .speak {
-  font: inherit;
-  font-size: 13px;
-  line-height: 1;
-  padding: 2px 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 5px;
   border: 1px solid rgba(0, 0, 0, 0.2);
   border-radius: 6px;
   background: transparent;
+  color: inherit;
   cursor: pointer;
+}
+.speak svg {
+  display: block;
 }
 .speak:disabled {
   opacity: 0.4;

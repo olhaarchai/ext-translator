@@ -3,6 +3,7 @@ import { addEntry, hasEntry, listEntries, removeEntry } from './lib/vocab-db'
 import type { VocabEntry, VocabKey } from './lib/vocab-types'
 
 const MENU_ID = 'translate-selection'
+const OPEN_VOCAB_ID = 'open-vocabulary'
 
 chrome.sidePanel?.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {})
 
@@ -14,10 +15,22 @@ chrome.runtime.onInstalled.addListener(() => {
       contexts: ['selection'],
       documentUrlPatterns: ['http://*/*', 'https://*/*'],
     })
+    chrome.contextMenus.create({
+      id: OPEN_VOCAB_ID,
+      title: 'Open Kotiq vocabulary',
+      contexts: ['all'],
+    })
   })
 })
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === OPEN_VOCAB_ID) {
+    // Open synchronously, before any await: the side panel may only open within the click's
+    // own user gesture, and awaiting first spends it. A content-script button cannot do this
+    // at all — the sidePanel API is not exposed there, and a forwarded gesture is rejected.
+    if (tab?.windowId !== undefined) chrome.sidePanel?.open({ windowId: tab.windowId }).catch(() => {})
+    return
+  }
   if (info.menuItemId !== MENU_ID || tab?.id === undefined) return
   void handleClick(tab.id, info.selectionText ?? '')
 })
