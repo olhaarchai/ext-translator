@@ -11,7 +11,7 @@ import {
 } from './translate'
 import { spokenLanguage } from './spoken-language'
 import { onVoicesChanged, stopSpeaking } from './speech'
-import { voicePicker } from './voice-picker'
+import { voiceControl } from './voice-picker'
 import { vocabAdd, vocabHas, vocabRemove } from './vocab-client'
 import { keyOf, normalizeSourceText, type VocabEntry } from './vocab-types'
 
@@ -357,8 +357,8 @@ class Bubble {
 
 function spokenLanguageWithPicker(text: string, lang: string): HTMLElement {
   const group = spokenLanguage(text, lang, 'meta')
-  const picker = voicePicker(lang)
-  if (picker !== null) group.append(picker)
+  const control = voiceControl(lang)
+  if (control !== null) group.append(control)
   return group
 }
 
@@ -483,9 +483,53 @@ const BUBBLE_CSS = `
   gap: 6px;
 }
 .voice {
-  font: inherit;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: currentColor;
+  opacity: 0.7;
+  cursor: pointer;
+}
+.voice:hover {
+  background: rgba(0, 0, 0, 0.06);
+  opacity: 1;
+}
+.voice:focus-within {
+  outline: 2px solid rgba(0, 0, 0, 0.35);
+  opacity: 1;
+}
+.voice-caret {
   font-size: 12px;
-  max-width: 130px;
+  line-height: 1;
+  pointer-events: none;
+}
+.voice-none {
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 6px;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  opacity: 0.55;
+  white-space: nowrap;
+  cursor: help;
+}
+/* A real, focusable select laid invisibly over the caret: the native dropdown and its
+   keyboard handling stay, while only the caret shows. */
+.voice-select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  cursor: pointer;
+  font: inherit;
 }
 .speak {
   font: inherit;
@@ -542,6 +586,12 @@ select {
   }
   .speak {
     border-color: rgba(255, 255, 255, 0.25);
+  }
+  .voice:hover {
+    background: rgba(255, 255, 255, 0.12);
+  }
+  .voice:focus-within {
+    outline-color: rgba(255, 255, 255, 0.45);
   }
 }
 `
