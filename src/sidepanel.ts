@@ -1,5 +1,5 @@
 import { buildSession, closestToTrainable, trainableLanguages, type Card } from './lib/cards'
-import { expandableText } from './lib/expandable-text'
+import { clampedText, expandableText } from './lib/expandable-text'
 import { languageLabel } from './lib/languages'
 import { isSelectionIconEnabled, setSelectionIconEnabled } from './lib/settings'
 import { onVoicesChanged } from './lib/speech'
@@ -20,6 +20,11 @@ const trainProgressEl = requireEl('train-progress')
 const trainStartEl = requireEl('train-start') as HTMLButtonElement
 const trainExitEl = requireEl('train-exit') as HTMLButtonElement
 
+interface OptionView {
+  button: HTMLButtonElement
+  option: string
+}
+
 let entries: VocabEntry[] = []
 
 // A session is transient: leaving the trainer throws it away (spec 006 contract), which is
@@ -27,6 +32,9 @@ let entries: VocabEntry[] = []
 let session: Card[] = []
 let cardIndex = 0
 let correctCount = 0
+// The card's outcome is final once given. Tracked here rather than by disabling the
+// options, because a disabled button also stops its own "Show more" from firing.
+let answered = false
 
 function requireEl(id: string): HTMLElement {
   const el = document.getElementById(id)
@@ -134,6 +142,7 @@ function renderCard(): void {
 
   trainProgressEl.textContent = `${cardIndex + 1} / ${session.length}`
   trainBodyEl.replaceChildren()
+  answered = false
 
   const prompt = div('prompt')
   const speaker = speakerButton(card.entry.sourceText, card.entry.sourceLanguage)
@@ -141,33 +150,43 @@ function renderCard(): void {
   prompt.append(expandableText('div', 'prompt-text', card.entry.sourceText))
   trainBodyEl.append(prompt)
 
-  const buttons: HTMLButtonElement[] = []
+  const options: OptionView[] = []
   for (const option of card.options) {
+    const { text: label, hint } = clampedText('span', 'option-text', option)
     const button = document.createElement('button')
     button.className = 'option'
     button.type = 'button'
-    button.append(expandableText('span', 'option-text', option))
-    button.addEventListener('click', () => answer(card, option, buttons))
-    buttons.push(button)
-    trainBodyEl.append(button)
+    button.append(label)
+    button.addEventListener('click', () => answer(card, option, options))
+    options.push({ button, option })
+
+    const wrap = div('option-wrap')
+    wrap.append(button)
+    // Beside the button, never inside it: expanding and answering must not compete for
+    // the same click, and the hint has to outlive the answer.
+    if (hint !== null) wrap.append(hint)
+    trainBodyEl.append(wrap)
   }
 }
 
-function answer(card: Card, chosen: string, buttons: HTMLButtonElement[]): void {
-  // Already answered: the outcome is final.
-  if (buttons.some((b) => b.disabled)) return
+function answer(card: Card, chosen: string, options: OptionView[]): void {
+  if (answered) return
+  answered = true
 
   const right = chosen === card.answer
   if (right) correctCount++
 
-  for (const button of buttons) {
-    button.disabled = true
-    const optionText = button.querySelector('.option-text')?.textContent ?? ''
-    if (optionText === card.answer) button.classList.add('correct')
-    else if (optionText === chosen) button.classList.add('wrong')
+  for (const view of options) {
+    view.button.classList.add('answered')
+    view.button.setAttribute('aria-disabled', 'true')
+    if (view.option === card.answer) view.button.classList.add('correct')
+    else if (view.option === chosen) view.button.classList.add('wrong')
   }
 
-  trainBodyEl.append(text('p', 'verdict', right ? 'Correct' : `Correct answer: ${card.answer}`))
+  const verdict = text('p', 'verdict', right ? 'Correct' : `Correct answer: ${card.answer}`)
+  // The verdict is the whole point of the card; announce it rather than only colouring it.
+  verdict.setAttribute('role', 'status')
+  trainBodyEl.append(verdict)
 
   const next = document.createElement('button')
   next.className = 'primary'
@@ -178,6 +197,9 @@ function answer(card: Card, chosen: string, buttons: HTMLButtonElement[]): void 
     renderCard()
   })
   trainBodyEl.append(next)
+  // Answering disables nothing now, but the chosen option is spent; move on from it so the
+  // keyboard does not fall back to the top of the document on every card.
+  next.focus()
 }
 
 function renderScore(): void {

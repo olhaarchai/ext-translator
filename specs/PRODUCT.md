@@ -1,6 +1,8 @@
 # Product
 
-Working name: ext-translator (final store name TBD; must not contain third-party trademarks).
+Store name: Kotiq Translate. Repository and package stay `ext-translator`; the IndexedDB
+database name is also `ext-translator` and must never be renamed — it would orphan every
+vocabulary already saved on a user's machine.
 
 ## Problem
 

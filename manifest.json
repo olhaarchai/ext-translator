@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Select Translate (dev)",
+  "name": "Kotiq Translate",
   "version": "0.1.0",
   "description": "Translate selected text on any page, fully on-device with the browser's built-in translator.",
   "minimum_chrome_version": "138",
@@ -15,7 +15,7 @@
     "128": "icons/icon128.png"
   },
   "action": {
-    "default_title": "Select Translate",
+    "default_title": "Kotiq Translate",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from 'vitest'
-import { expandableText } from './expandable-text'
+import { clampedText, expandableText } from './expandable-text'
 
 /**
  * happy-dom has no layout, so every element reports zero height. Overflow is therefore
@@ -11,93 +11,150 @@ function setOverflow(node: HTMLElement, overflowing: boolean): void {
   Object.defineProperty(node, 'scrollHeight', { value: overflowing ? 80 : 40, configurable: true })
 }
 
-function inOption(content: string, overflowing: boolean) {
-  const answered = vi.fn()
-  const button = document.createElement('button')
-  button.addEventListener('click', answered)
-  button.append(expandableText('span', 'option-text', content))
-  document.body.replaceChildren(button)
+const LONG = 'long sentence '.repeat(10)
+// Past the short-circuit, so a hint is built, yet still able to fit two lines.
+const LONGISH = 'x'.repeat(70)
 
-  const text = button.querySelector('.option-text') as HTMLElement
-  const hint = button.querySelector('.clamped-hint') as HTMLElement | null
+function vocabRow(content: string, overflowing: boolean) {
+  const wrap = expandableText('div', 'entry-source', content)
+  document.body.replaceChildren(wrap)
+  const text = wrap.querySelector('.entry-source') as HTMLElement
   setOverflow(text, overflowing)
-  return { answered, text, hint, button }
+  return { wrap, text, hint: wrap.querySelector('.clamped-hint') as HTMLElement | null }
 }
 
-describe('expandableText', () => {
+function option(content: string, overflowing: boolean) {
+  const answered = vi.fn()
+  const { text, hint, toggle } = clampedText('span', 'option-text', content)
+  const button = document.createElement('button')
+  button.addEventListener('click', answered)
+  button.append(text)
+
+  const wrap = document.createElement('div')
+  wrap.append(button)
+  if (hint) wrap.append(hint)
+  document.body.replaceChildren(wrap)
+
+  setOverflow(text, overflowing)
+  return { answered, text, hint, button, toggle }
+}
+
+describe('clampedText', () => {
   it('carries the full text even while clamped, so comparisons never see the short form', () => {
-    const long = 'a very long sentence '.repeat(20)
-    const { text } = inOption(long, true)
+    const { text } = option(LONG, true)
     expect(text.classList.contains('clamped')).toBe(true)
-    expect(text.textContent).toBe(long)
+    expect(text.textContent).toBe(LONG)
   })
 
-  it('expands on click and collapses on a second click', () => {
-    const { text } = inOption('long '.repeat(50), true)
-
-    text.click()
-    expect(text.classList.contains('clamped')).toBe(false)
-
-    text.click()
-    expect(text.classList.contains('clamped')).toBe(true)
+  it('hands the hint back instead of nesting it, so it can live outside the button', () => {
+    const { button, hint } = option(LONG, true)
+    expect(hint).not.toBeNull()
+    expect(button.contains(hint)).toBe(false)
   })
 
-  it('does not let an expanding click reach the option button', () => {
-    const { answered, text } = inOption('long '.repeat(50), true)
-
-    text.click()
-
-    expect(answered).not.toHaveBeenCalled()
-    expect(text.classList.contains('clamped')).toBe(false)
+  it('offers no hint for text too short to ever need one', () => {
+    const { hint } = option('короткий', false)
+    expect(hint).toBeNull()
   })
 
-  it('toggles from the hint as well, without answering', () => {
-    const { answered, hint } = inOption('long '.repeat(50), true)
-
-    hint!.click()
-
-    expect(answered).not.toHaveBeenCalled()
-    expect(hint!.textContent).toBe('Show less')
-  })
-
-  it('lets the click answer the option when the text fits, without waiting for a frame', () => {
-    // The dead-option bug: a short text swallowed the click and the option never answered.
-    // Correctness must not depend on requestAnimationFrame, which a hidden panel may
-    // never get.
-    const { answered, text } = inOption('короткий', false)
+  it('answers on the first click on the text, even when the text is long enough to clamp', () => {
+    // The dead-click bug: the text competed with the button for the click and won,
+    // swallowing the answer. Inside an option nothing may intercept the text.
+    const { answered, text } = option(LONG, true)
 
     text.click()
 
     expect(answered).toHaveBeenCalledOnce()
   })
 
+  it('answers on the first click when the text is past the short-circuit but still fits', () => {
+    // This is the case the old test missed: it used a string under the short-circuit, so
+    // no handler was ever attached and it passed without exercising anything.
+    const { answered, text } = option(LONGISH, false)
+
+    text.click()
+
+    expect(answered).toHaveBeenCalledOnce()
+  })
+
+  it('expands from the hint without answering, and collapses again', () => {
+    const { answered, hint } = option(LONG, true)
+
+    hint!.click()
+    expect(hint!.textContent).toBe('Show less')
+
+    hint!.click()
+    expect(hint!.textContent).toBe('Show more')
+    expect(answered).not.toHaveBeenCalled()
+  })
+
+  it('keeps the hint working after the option is marked answered', () => {
+    // The option is never disabled precisely so this keeps working: a disabled button
+    // silences its own descendants, and the reader still wants to read the full answer.
+    const { button, hint, text } = option(LONG, true)
+    button.classList.add('answered')
+
+    hint!.click()
+
+    expect(text.classList.contains('clamped')).toBe(false)
+  })
+
+  it('drops the hint once the text proves it fits', () => {
+    const { hint, text, toggle } = option(LONGISH, false)
+
+    toggle()
+
+    expect(hint!.isConnected).toBe(false)
+    expect(text.classList.contains('clamped')).toBe(false)
+  })
+
+  it('never re-clamps text that has proved it fits', () => {
+    // The stale-handler bug: once settled, a further toggle re-added the clamp, which
+    // stripped the hint's meaning and swallowed a click for nothing.
+    const { text, toggle } = option(LONGISH, false)
+
+    toggle()
+    toggle()
+
+    expect(text.classList.contains('clamped')).toBe(false)
+  })
+})
+
+describe('expandableText', () => {
+  it('expands on a click on the text itself, where nothing else owns the click', () => {
+    const { text } = vocabRow(LONG, true)
+
+    text.click()
+    expect(text.classList.contains('clamped')).toBe(false)
+
+    text.click()
+    expect(text.classList.contains('clamped')).toBe(true)
+  })
+
   it('never offers to expand a single word, without needing a frame to measure', () => {
     // The side panel bug: "Show more" hung under "History". A panel may render before it
-    // is painted, so this must hold with no requestAnimationFrame having run at all.
-    const wrap = expandableText('div', 'entry-source', 'History')
-    document.body.replaceChildren(wrap)
+    // is painted, so this must hold with no measurement having run at all.
+    const { wrap, text } = vocabRow('History', false)
 
-    const text = wrap.querySelector('.entry-source') as HTMLElement
     expect(wrap.querySelector('.clamped-hint')).toBeNull()
     expect(text.classList.contains('clamped')).toBe(false)
     expect(text.classList.contains('expandable')).toBe(false)
   })
 
   it('still clamps text long enough to need it', () => {
-    const wrap = expandableText('div', 'entry-source', 'x'.repeat(200))
-    document.body.replaceChildren(wrap)
+    const { hint, text } = vocabRow('x'.repeat(200), true)
 
-    expect(wrap.querySelector('.clamped-hint')).not.toBeNull()
-    expect((wrap.querySelector('.entry-source') as HTMLElement).classList.contains('clamped')).toBe(true)
+    expect(hint).not.toBeNull()
+    expect(text.classList.contains('clamped')).toBe(true)
   })
 
-  it('drops the affordance once it knows the text fits', () => {
-    const { text, button } = inOption('короткий', false)
+  it('settles into plain text on the first click once it knows the text fits', () => {
+    const { text, hint } = vocabRow(LONGISH, false)
 
     text.click()
 
-    expect(text.classList.contains('expandable')).toBe(false)
     expect(text.classList.contains('clamped')).toBe(false)
-    expect(button.querySelector('.clamped-hint')).toBeNull()
+    expect(text.classList.contains('expandable')).toBe(false)
+    expect(hint!.isConnected).toBe(false)
   })
 })
