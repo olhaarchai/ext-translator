@@ -4,8 +4,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('./settings', () => ({
   hasConsent: vi.fn(async () => true),
   grantConsent: vi.fn(async () => {}),
+  hasOfflineConsent: vi.fn(async () => false),
+  grantOfflineConsent: vi.fn(async () => {}),
+  isBuiltinDead: vi.fn(async () => false),
+  markBuiltinDead: vi.fn(async () => {}),
   getTargetLanguage: vi.fn(async () => 'uk'),
   setTargetLanguage: vi.fn(async () => {}),
+}))
+
+vi.mock('./engine/offline-client', () => ({
+  OFFLINE_MAX_CHARS: 5000,
+  ensureOfflineEngine: vi.fn(async () => true),
+  quoteOffline: vi.fn(),
+  translateOffline: vi.fn(),
+  truncateForOffline: (text: string) => ({ text, truncated: false }),
 }))
 
 vi.mock('./translate', async (importOriginal) => {
@@ -49,7 +61,15 @@ import {
   notifyVocabChanged,
   openBubble,
 } from './bubble'
-import { grantConsent, hasConsent } from './settings'
+import { ensureOfflineEngine, quoteOffline, translateOffline } from './engine/offline-client'
+import {
+  grantConsent,
+  grantOfflineConsent,
+  hasConsent,
+  hasOfflineConsent,
+  isBuiltinDead,
+  markBuiltinDead,
+} from './settings'
 import { speakToggle, stopSpeaking } from './speech'
 import { translateSelection, type TranslateOutcome } from './translate'
 import { vocabAdd, vocabHas, vocabRemove } from './vocab-client'
@@ -69,9 +89,16 @@ function trustedClick(node: Element): void {
   node.dispatchEvent(event)
 }
 
+const globals = globalThis as Record<string, unknown>
+
 beforeEach(() => {
   vi.clearAllMocks()
+  // happy-dom has no built-in translation; stub the globals so feature detection picks
+  // the built-in engine everywhere except the offline-fallback tests.
+  globals['Translator'] = class {}
+  globals['LanguageDetector'] = class {}
   vi.mocked(hasConsent).mockResolvedValue(true)
+  vi.mocked(hasOfflineConsent).mockResolvedValue(false)
   vi.mocked(vocabHas).mockResolvedValue(false)
   vi.mocked(vocabAdd).mockResolvedValue('added')
   vi.mocked(translateSelection).mockResolvedValue(RESULT)
@@ -402,5 +429,133 @@ describe('speaking the translation', () => {
     })
     await openBubble('hello world')
     expect(speakers()).toHaveLength(0)
+  })
+})
+
+describe('bubble with dead built-in translation (classes present, service missing)', () => {
+  beforeEach(() => {
+    // Globals exist (set in the outer beforeEach), but the run reports the browser as
+    // unsupported — the Chromium-fork case where create() hangs behind the watchdog.
+    vi.mocked(translateSelection).mockResolvedValue({ kind: 'error', error: 'unsupported-browser' })
+    vi.mocked(ensureOfflineEngine).mockResolvedValue(true)
+    vi.mocked(quoteOffline).mockResolvedValue({ kind: 'ready', sourceLanguage: 'en', downloadBytes: 21_000_000 })
+    vi.mocked(translateOffline).mockResolvedValue(RESULT)
+  })
+
+  it('falls back to the offline offer instead of a dead-end error', async () => {
+    await openBubble('hello world')
+
+    await vi.waitFor(() => {
+      expect(root().querySelector('button')?.textContent).toBe('Enable offline translation')
+    })
+    expect(root().querySelector('.message')?.textContent).toContain('one-time model download')
+  })
+
+  it('remembers the dead built-in engine for the session', async () => {
+    await openBubble('hello world')
+    await vi.waitFor(() => {
+      expect(markBuiltinDead).toHaveBeenCalled()
+    })
+  })
+
+  it('skips the doomed built-in attempt entirely once the session memo is set', async () => {
+    vi.mocked(isBuiltinDead).mockResolvedValue(true)
+    await openBubble('hello world')
+
+    await vi.waitFor(() => {
+      expect(root().querySelector('button')?.textContent).toBe('Enable offline translation')
+    })
+    expect(translateSelection).not.toHaveBeenCalled()
+  })
+
+  it('translates offline directly when offline consent already exists', async () => {
+    vi.mocked(hasOfflineConsent).mockResolvedValue(true)
+    await openBubble('hello world')
+
+    await vi.waitFor(() => {
+      expect(translateOffline).toHaveBeenCalled()
+      expect(root().querySelector('.translation')?.textContent).toBe('Привіт')
+    })
+  })
+
+  it('shows the plain unsupported message when the offline engine cannot start either', async () => {
+    vi.mocked(ensureOfflineEngine).mockResolvedValue(false)
+    await openBubble('hello world')
+
+    await vi.waitFor(() => {
+      expect(root().querySelector('.message')?.textContent).toContain('not available here')
+    })
+    expect(root().querySelector('button')).toBeNull()
+  })
+})
+
+describe('bubble offline fallback', () => {
+  beforeEach(() => {
+    delete globals['Translator']
+    delete globals['LanguageDetector']
+    vi.mocked(ensureOfflineEngine).mockResolvedValue(true)
+    vi.mocked(quoteOffline).mockResolvedValue({ kind: 'ready', sourceLanguage: 'en', downloadBytes: 21_000_000 })
+    vi.mocked(translateOffline).mockResolvedValue(RESULT)
+  })
+
+  it('offers offline translation with the download size instead of a dead end', async () => {
+    await openBubble('hello world')
+
+    await vi.waitFor(() => {
+      expect(root().querySelector('button')?.textContent).toBe('Enable offline translation')
+    })
+    const message = root().querySelector('.message')?.textContent ?? ''
+    expect(message).toContain('one-time model download (~21 MB)')
+    expect(message).toContain('never leaves your browser')
+    expect(translateOffline).not.toHaveBeenCalled()
+  })
+
+  it('translates after agreeing, persisting offline consent', async () => {
+    await openBubble('hello world')
+    await vi.waitFor(() => {
+      expect(root().querySelector('button')).not.toBeNull()
+    })
+
+    trustedClick(root().querySelector('button')!)
+    await vi.waitFor(() => {
+      expect(grantOfflineConsent).toHaveBeenCalled()
+      expect(translateOffline).toHaveBeenCalled()
+      expect(root().querySelector('.translation')?.textContent).toBe('Привіт')
+    })
+  })
+
+  it('skips the offer when offline consent already exists', async () => {
+    vi.mocked(hasOfflineConsent).mockResolvedValue(true)
+    await openBubble('hello world')
+
+    await vi.waitFor(() => {
+      expect(root().querySelector('.translation')?.textContent).toBe('Привіт')
+    })
+    expect(quoteOffline).not.toHaveBeenCalled()
+    expect(grantOfflineConsent).not.toHaveBeenCalled()
+  })
+
+  it('surfaces an unavailable pair from the quote without downloading anything', async () => {
+    vi.mocked(quoteOffline).mockResolvedValue({
+      kind: 'error',
+      error: 'pair-unavailable',
+      sourceLanguage: 'is',
+    })
+    await openBubble('halló heimur')
+
+    await vi.waitFor(() => {
+      expect(root().querySelector('.message')?.textContent).toContain('not available')
+    })
+    expect(translateOffline).not.toHaveBeenCalled()
+  })
+
+  it('falls back to the unsupported message when the engine cannot start', async () => {
+    vi.mocked(ensureOfflineEngine).mockResolvedValue(false)
+    await openBubble('hello world')
+
+    await vi.waitFor(() => {
+      expect(root().querySelector('.message')?.textContent).toContain('not available here')
+    })
+    expect(quoteOffline).not.toHaveBeenCalled()
   })
 })

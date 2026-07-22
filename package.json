@@ -16,5 +16,9 @@
     "happy-dom": "^20.10.6",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
+  },
+  "dependencies": {
+    "@browsermt/bergamot-translator": "^0.4.9",
+    "tinyld": "^1.3.4"
   }
 }

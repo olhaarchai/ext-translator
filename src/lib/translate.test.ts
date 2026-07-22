@@ -1,10 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MAX_CHARS, translateSelection, type TranslateProgress } from './translate'
 
-function stubLanguageDetector(candidates: LanguageDetectionResult[]) {
+function stubLanguageDetector(
+  candidates: LanguageDetectionResult[],
+  options: { availability?: AIAvailability } = {},
+) {
   const destroy = vi.fn()
   const detect = vi.fn(async () => candidates)
   vi.stubGlobal('LanguageDetector', {
+    availability: vi.fn(async () => options.availability ?? 'available'),
     create: vi.fn(async () => ({ detect, destroy })),
   })
   return { detect, destroy }
@@ -93,6 +97,46 @@ describe('translateSelection', () => {
     const outcome = await translateSelection('привіт', 'uk', () => {})
     expect(outcome).toEqual({ kind: 'same-language', language: 'uk' })
     expect(create).not.toHaveBeenCalled()
+  })
+
+  it('reports unsupported browser when the detector service says unavailable', async () => {
+    // The Chromium-fork case: classes exist, but nothing works behind them.
+    stubLanguageDetector([{ detectedLanguage: 'en', confidence: 0.9 }], { availability: 'unavailable' })
+    stubTranslator()
+    const outcome = await translateSelection('hello', 'uk', () => {})
+    expect(outcome).toEqual({ kind: 'error', error: 'unsupported-browser' })
+  })
+
+  it('reports unsupported browser when detector creation hangs silently', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.stubGlobal('LanguageDetector', {
+        availability: vi.fn(async () => 'downloadable'),
+        create: vi.fn(() => new Promise(() => {})),
+      })
+      stubTranslator()
+      const pending = translateSelection('hello', 'uk', () => {})
+      await vi.advanceTimersByTimeAsync(9000)
+      expect(await pending).toEqual({ kind: 'error', error: 'unsupported-browser' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('reports unsupported browser when the pair availability probe hangs', async () => {
+    vi.useFakeTimers()
+    try {
+      stubLanguageDetector([{ detectedLanguage: 'en', confidence: 0.9 }])
+      vi.stubGlobal('Translator', {
+        availability: vi.fn(() => new Promise(() => {})),
+        create: vi.fn(),
+      })
+      const pending = translateSelection('hello', 'uk', () => {})
+      await vi.advanceTimersByTimeAsync(4000)
+      expect(await pending).toEqual({ kind: 'error', error: 'unsupported-browser' })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('reports an unavailable language pair', async () => {

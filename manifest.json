@@ -1,10 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Kotiq Translate",
-  "version": "0.1.0",
-  "description": "Translate selected text on any page, fully on-device with the browser's built-in translator.",
-  "minimum_chrome_version": "138",
-  "permissions": ["contextMenus", "activeTab", "scripting", "storage", "sidePanel"],
+  "version": "0.2.0",
+  "description": "Translate selected text on any page, fully on-device — with the browser's built-in translator or a bundled offline engine.",
+  "minimum_chrome_version": "116",
+  "permissions": ["contextMenus", "activeTab", "scripting", "storage", "sidePanel", "offscreen"],
+  "host_permissions": ["https://storage.googleapis.com/bergamot-models-sandbox/*"],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
   "side_panel": {
     "default_path": "sidepanel.html"
   },
