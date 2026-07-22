@@ -7,6 +7,12 @@ const OPEN_VOCAB_ID = 'open-vocabulary'
 
 chrome.sidePanel?.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {})
 
+// Content scripts read the session-scoped "built-in translation is dead" memo; session
+// storage is trusted-contexts-only until opened up.
+chrome.storage.session
+  ?.setAccessLevel({ accessLevel: 'TRUSTED_AND_UNTRUSTED_CONTEXTS' })
+  .catch(() => {})
+
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({
@@ -43,6 +49,39 @@ async function handleClick(tabId: number, selectionText: string): Promise<void> 
   } catch {
     // Injection is impossible on browser-internal pages; the menu is scoped to
     // http(s) but a race with navigation can still land here.
+  }
+}
+
+chrome.runtime.onMessage.addListener((message: { type?: string }, _sender, sendResponse) => {
+  if (message?.type !== 'offline-ensure') return
+  ensureOffscreen()
+    .then((ok) => sendResponse({ ok }))
+    .catch(() => sendResponse({ ok: false }))
+  return true
+})
+
+/**
+ * The offline engine runs in an offscreen document: a service worker cannot host its
+ * WASM worker, and a content script must not — the model and engine would then live in
+ * every page's process. Chrome allows a single offscreen document per extension.
+ */
+async function ensureOffscreen(): Promise<boolean> {
+  if (chrome.offscreen === undefined) return false
+  const contexts = await chrome.runtime.getContexts({
+    contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
+  })
+  if (contexts.length > 0) return true
+  try {
+    await chrome.offscreen.createDocument({
+      url: 'offscreen.html',
+      reasons: [chrome.offscreen.Reason.WORKERS],
+      justification:
+        'Runs the on-device translation engine in a worker when the browser has no built-in translator.',
+    })
+    return true
+  } catch (error) {
+    // Lost a race with another ensure call; any other failure means no offline engine.
+    return String(error).includes('single offscreen')
   }
 }
 

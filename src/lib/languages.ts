@@ -76,6 +76,6 @@ export function languageLabel(code: string): string {
 }
 
 /** Supported targets ordered the way a reader scans a list: by the name they will see. */
-export function targetsByLabel(): string[] {
-  return [...SUPPORTED_TARGETS].sort((a, b) => languageLabel(a).localeCompare(languageLabel(b)))
+export function targetsByLabel(codes: readonly string[] = SUPPORTED_TARGETS): string[] {
+  return [...codes].sort((a, b) => languageLabel(a).localeCompare(languageLabel(b)))
 }

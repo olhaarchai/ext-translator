@@ -1,8 +1,25 @@
 import { BUBBLE_WIDTH, bubblePosition, clampTop, type AnchorRect } from './bubble-position'
-import { hardenHost, randomHostId } from './extension-host'
-import { languageLabel, targetsByLabel } from './languages'
-import { getTargetLanguage, grantConsent, hasConsent, setTargetLanguage } from './settings'
 import {
+  ensureOfflineEngine,
+  OFFLINE_MAX_CHARS,
+  quoteOffline,
+  translateOffline,
+} from './engine/offline-client'
+import { offlineTargetLanguages } from './engine/registry'
+import { hardenHost, randomHostId } from './extension-host'
+import { defaultTargetLanguage, languageLabel, targetsByLabel } from './languages'
+import {
+  getTargetLanguage,
+  grantConsent,
+  grantOfflineConsent,
+  hasConsent,
+  hasOfflineConsent,
+  isBuiltinDead,
+  markBuiltinDead,
+  setTargetLanguage,
+} from './settings'
+import {
+  hasBuiltinTranslation,
   MAX_CHARS,
   translateSelection,
   type TranslateError,
@@ -82,10 +99,16 @@ export async function openBubble(fallbackText: string): Promise<void> {
     activeHost = null
   }
 
-  const bubble = new Bubble(root, text, anchor)
+  // Presence of the classes plus no session memo of them being dead; the memo saves the
+  // watchdog wait on every translation after the first in a broken fork.
+  const engine: 'builtin' | 'offline' =
+    hasBuiltinTranslation() && !(await isBuiltinDead()) ? 'builtin' : 'offline'
+  if (activeRoot !== root) return
+
+  const bubble = new Bubble(root, text, anchor, engine)
   activeBubble = bubble
 
-  const consented = await hasConsent()
+  const consented = bubble.engine === 'builtin' ? await hasConsent() : await hasOfflineConsent()
   // Escape or an outside click during that storage round-trip already tore this bubble
   // down; without this check we would translate for a bubble nobody can see, and nothing
   // would be left to abort it.
@@ -93,8 +116,10 @@ export async function openBubble(fallbackText: string): Promise<void> {
 
   if (consented) {
     await bubble.start()
-  } else {
+  } else if (bubble.engine === 'builtin') {
     bubble.renderConsent()
+  } else {
+    await bubble.renderOfflineOffer()
   }
 }
 
@@ -117,11 +142,40 @@ class Bubble {
   private streamingBody: HTMLElement | null = null
   private statusBody: HTMLElement | null = null
 
+  /**
+   * The starting engine comes from feature detection, but presence of the built-in
+   * classes is not proof they work: Chromium forks ship them without the download
+   * service behind them. When the built-in run reports the browser as unsupported, the
+   * bubble switches to the offline engine instead of showing a dead end, and remembers
+   * the verdict for the session.
+   */
   constructor(
     private readonly root: HTMLElement,
     private readonly text: string,
     private readonly anchor: AnchorRect | null,
+    public engine: 'builtin' | 'offline',
   ) {}
+
+  private maxChars(): number {
+    return this.engine === 'builtin' ? MAX_CHARS : OFFLINE_MAX_CHARS
+  }
+
+  private targetChoices(): string[] {
+    return this.engine === 'builtin' ? targetsByLabel() : targetsByLabel(offlineTargetLanguages())
+  }
+
+  /**
+   * The stored target may be a language only the built-in engine offers (settings are
+   * shared across browsers via profile sync); the offline picker must land on something
+   * the offline registry can actually serve.
+   */
+  private clampTarget(stored: string): string {
+    if (this.engine === 'builtin') return stored
+    const targets = offlineTargetLanguages()
+    if (targets.includes(stored)) return stored
+    const fallback = defaultTargetLanguage(chrome.i18n.getUILanguage())
+    return targets.includes(fallback) ? fallback : 'en'
+  }
 
   private placedTop: number | null = null
 
@@ -174,8 +228,57 @@ class Bubble {
 
   async start(): Promise<void> {
     if (!this.isActive()) return
-    const target = await getTargetLanguage()
+    const target = this.clampTarget(await getTargetLanguage())
     await this.run(target)
+  }
+
+  private async fallbackToOffline(): Promise<void> {
+    if (await hasOfflineConsent()) await this.start()
+    else await this.renderOfflineOffer()
+  }
+
+  async renderOfflineOffer(): Promise<void> {
+    if (!this.isActive()) return
+    this.renderStatus('Checking translation options…')
+
+    const ready = await ensureOfflineEngine()
+    if (!this.isActive()) return
+    if (!ready) {
+      this.renderOutcome({ kind: 'error', error: 'unsupported-browser' }, 'en')
+      return
+    }
+
+    const target = this.clampTarget(await getTargetLanguage())
+    const quote = await quoteOffline(this.text, target)
+    if (!this.isActive()) return
+    if (quote.kind === 'same-language') {
+      this.renderOutcome({ kind: 'same-language', language: quote.language }, target)
+      return
+    }
+    if (quote.kind === 'error') {
+      this.renderOutcome({ kind: 'error', error: quote.error, sourceLanguage: quote.sourceLanguage }, target)
+      return
+    }
+
+    const megabytes = Math.max(1, Math.round(quote.downloadBytes / 1_000_000))
+    const download =
+      quote.downloadBytes > 0
+        ? `Translating ${languageLabel(quote.sourceLanguage)} needs a one-time model download (~${megabytes} MB). `
+        : ''
+    const message = el(
+      'p',
+      'message',
+      'Built-in translation is not available in this browser. Kotiq can translate ' +
+        `on-device with an open-source engine instead. ${download}` +
+        'Selected text is processed locally and never leaves your browser.',
+    )
+    const agree = button('Enable offline translation', () => {
+      void grantOfflineConsent().then(() => this.start())
+    })
+    this.streamingBody = null
+    this.statusBody = null
+    this.root.replaceChildren(message, agree)
+    this.place()
   }
 
   private async run(target: string): Promise<void> {
@@ -194,18 +297,31 @@ class Bubble {
     this.controller = controller
 
     this.renderStatus('Detecting language…')
-    const outcome = await translateSelection(
-      this.text,
-      target,
-      (progress) => {
-        if (id === this.runId) this.renderStatus(progressText(progress))
-      },
-      (partial) => {
-        if (id === this.runId) this.renderPartial(partial)
-      },
-      controller.signal,
-    )
+    const onProgress = (progress: TranslateProgress) => {
+      if (id === this.runId) this.renderStatus(progressText(progress))
+    }
+    const onPartial = (partial: string) => {
+      if (id === this.runId) this.renderPartial(partial)
+    }
+    const outcome =
+      this.engine === 'builtin'
+        ? await translateSelection(this.text, target, onProgress, onPartial, controller.signal)
+        : await this.runOffline(target, onProgress, onPartial, controller.signal)
     if (id === this.runId) this.renderOutcome(outcome, target)
+  }
+
+  private async runOffline(
+    target: string,
+    onProgress: (progress: TranslateProgress) => void,
+    onPartial: (translation: string) => void,
+    signal: AbortSignal,
+  ): Promise<TranslateOutcome> {
+    // The offscreen document may have been closed since consent (idle shutdown, browser
+    // restart); ensure it exists before every job.
+    const ready = await ensureOfflineEngine()
+    if (!ready) return { kind: 'error', error: 'unsupported-browser' }
+    if (signal.aborted) return { kind: 'aborted' }
+    return translateOffline(this.text, target, onProgress, onPartial, signal)
   }
 
   /**
@@ -259,6 +375,13 @@ class Bubble {
     // An aborted run leaves whatever replaced it on screen.
     if (outcome.kind === 'aborted' || !this.isActive()) return
 
+    if (outcome.kind === 'error' && outcome.error === 'unsupported-browser' && this.engine === 'builtin') {
+      this.engine = 'offline'
+      void markBuiltinDead()
+      void this.fallbackToOffline()
+      return
+    }
+
     refreshSaved = null
     this.streamingBody = null
     this.statusBody = null
@@ -277,7 +400,7 @@ class Bubble {
       nodes.push(header)
       nodes.push(el('p', 'translation', outcome.translation))
       if (outcome.truncated) {
-        nodes.push(el('p', 'meta', `Only the first ${MAX_CHARS} characters were translated.`))
+        nodes.push(el('p', 'meta', `Only the first ${this.maxChars()} characters were translated.`))
       }
       nodes.push(this.buildSaveControl(this.entryFor(outcome, target)))
     } else if (outcome.kind === 'same-language') {
@@ -299,7 +422,7 @@ class Bubble {
   }
 
   private translatedSource(outcome: Extract<TranslateOutcome, { kind: 'result' }>): string {
-    return outcome.truncated ? normalizeSourceText(this.text.slice(0, MAX_CHARS)) : this.text
+    return outcome.truncated ? normalizeSourceText(this.text.slice(0, this.maxChars())) : this.text
   }
 
   private entryFor(outcome: Extract<TranslateOutcome, { kind: 'result' }>, target: string): VocabEntry {
@@ -335,7 +458,7 @@ class Bubble {
     const footer = el('div', 'footer')
     const label = el('label', 'meta', 'Translate to ')
     const select = document.createElement('select')
-    for (const code of targetsByLabel()) {
+    for (const code of this.targetChoices()) {
       const option = document.createElement('option')
       option.value = code
       option.textContent = languageLabel(code)
@@ -377,8 +500,8 @@ function errorText(error: TranslateError, source: string | undefined, target: st
   switch (error) {
     case 'unsupported-browser':
       return (
-        'Built-in translation is not available here. ' +
-        'It requires a desktop browser with on-device translation (Chrome 138 or newer).'
+        'Translation is not available here. It requires a desktop browser with ' +
+        'built-in translation (Chrome 138 or newer) or support for the offline engine.'
       )
     case 'detection-failed':
       return 'Could not detect the language of the selected text.'
